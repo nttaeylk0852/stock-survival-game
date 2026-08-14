@@ -1,0 +1,12 @@
+{
+  "aiWeights": {
+    "revenue": 0.25,
+    "profit": 0.3,
+    "debt": -0.15,
+    "rnd": 0.1,
+    "morale": 0.05,
+    "brand": 0.15
+  },
+  "bankruptcyDebtRevenueRatio": 3.0,
+  "bankruptcyLossStreakTicks": 5
+}

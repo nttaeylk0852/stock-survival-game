@@ -1,0 +1,8 @@
+{
+  "starterCash": 10000,
+  "targetInflationRate": 0.02,
+  "baseInterestRate": 0.05,
+  "bondIssueRate": 0.03,
+  "newbieChurnPenaltyThreshold": 0.08,
+  "newbieChurnPenaltyMultiplier": 1.5
+}

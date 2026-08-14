@@ -1,0 +1,9 @@
+{
+  "maxHealth": 100,
+  "hungerThresholdMinutes": 120,
+  "hungerDamagePerTick": 5,
+  "weatherDamagePerTick": 3,
+  "mealCostBase": 500,
+  "restCostBase": 200,
+  "mealHealthRestore": 30
+}

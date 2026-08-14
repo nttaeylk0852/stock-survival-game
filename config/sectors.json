@@ -1,0 +1,10 @@
+{
+  "indices": {
+    "semiconductor": 1.0,
+    "technology": 1.0,
+    "energy": 1.0,
+    "bio": 1.0,
+    "finance": 1.0
+  },
+  "volatilityPerTick": 0.02
+}

@@ -1,0 +1,18 @@
+[
+  {
+    "id": "comp-alpha-semi",
+    "name": "Alpha Semiconductor",
+    "basePrice": 100,
+    "stats": {
+      "revenue": 80,
+      "profit": 20,
+      "debt": 30,
+      "rnd": 60,
+      "morale": 70,
+      "brand": 55
+    },
+    "sectors": ["semiconductor", "technology"],
+    "supplySensitivity": 0.7,
+    "sharesOutstanding": 1000000
+  }
+]

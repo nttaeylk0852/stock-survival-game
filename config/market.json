@@ -1,0 +1,9 @@
+{
+  "userInfluenceCap": 0.3,
+  "ammSlippageRate": 0.02,
+  "ammFeeRate": 0.005,
+  "orderBookMaxDepth": 50,
+  "priceStabilityMaxDrop": 0.4,
+  "priceStabilityMaxGain": 0.3,
+  "historicalMedianWindow": 20
+}
