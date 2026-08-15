@@ -7,6 +7,8 @@ import { LedgerModule } from '../economy/ledger';
 import { PlayersModule } from '../players';
 import { CompaniesModule } from '../companies';
 import { InfluenceModule } from './influence';
+import { CircuitBreaker } from './circuit-breaker';
+import type { MarketSession } from '../world/market-session';
 
 export class OrderBookModule implements GameModule {
   name = 'market/orderbook';
@@ -16,7 +18,9 @@ export class OrderBookModule implements GameModule {
     private ledger: LedgerModule,
     private players: PlayersModule,
     private companies: CompaniesModule,
-    private influence: InfluenceModule
+    private influence: InfluenceModule,
+    private circuitBreaker: CircuitBreaker,
+    private marketSession: MarketSession
   ) {}
 
   init(): void {}
@@ -26,8 +30,11 @@ export class OrderBookModule implements GameModule {
     companyId: string,
     side: 'buy' | 'sell',
     price: number,
-    quantity: number
+    quantity: number,
+    type: 'limit' | 'stop' = 'limit'
   ): Order {
+    if (this.circuitBreaker.isHalted()) throw new Error('Trading halted by circuit breaker');
+    if (!this.marketSession.isMarketOpen()) throw new Error('Market closed');
     if (quantity <= 0 || price <= 0) throw new Error('Invalid order');
     const company = this.companies.getCompany(companyId);
     if (!company || company.status !== 'ACTIVE') throw new Error('Company not tradable');
@@ -46,11 +53,14 @@ export class OrderBookModule implements GameModule {
     const now = Date.now();
 
     db.prepare(
-      `INSERT INTO orders (id, character_id, company_id, side, price, quantity, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'open', ?)`
-    ).run(orderId, characterId, companyId, side, price, quantity, now);
+      `INSERT INTO orders (id, character_id, company_id, side, order_type, price, quantity, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?)`
+    ).run(orderId, characterId, companyId, side, type, price, quantity, now);
 
-    this.matchOrders(companyId);
+    // 손절(stop) 주문은 가격 트리거로 체결되므로 지정가 매칭에 참여하지 않는다.
+    if (type === 'limit') {
+      this.matchOrders(companyId);
+    }
 
     const order = this.getOrder(orderId)!;
     return order;
@@ -60,14 +70,14 @@ export class OrderBookModule implements GameModule {
     const db = getDb();
     const buys = db
       .prepare(
-        `SELECT * FROM orders WHERE company_id = ? AND side = 'buy' AND status = 'open'
+        `SELECT * FROM orders WHERE company_id = ? AND side = 'buy' AND status = 'open' AND order_type = 'limit'
          ORDER BY price DESC, created_at ASC LIMIT ?`
       )
       .all(companyId, this.config.market.orderBookMaxDepth) as Record<string, unknown>[];
 
     const sells = db
       .prepare(
-        `SELECT * FROM orders WHERE company_id = ? AND side = 'sell' AND status = 'open'
+        `SELECT * FROM orders WHERE company_id = ? AND side = 'sell' AND status = 'open' AND order_type = 'limit'
          ORDER BY price ASC, created_at ASC LIMIT ?`
       )
       .all(companyId, this.config.market.orderBookMaxDepth) as Record<string, unknown>[];
@@ -193,6 +203,7 @@ export class OrderBookModule implements GameModule {
       characterId: row.character_id as string,
       companyId: row.company_id as string,
       side: row.side as 'buy' | 'sell',
+      type: (row.order_type as Order['type']) ?? 'limit',
       price: row.price as number,
       quantity: row.quantity as number,
       status: row.status as Order['status'],
@@ -212,6 +223,28 @@ export class OrderBookModule implements GameModule {
       characterId: row.character_id as string,
       companyId: row.company_id as string,
       side: row.side as 'buy' | 'sell',
+      type: (row.order_type as Order['type']) ?? 'limit',
+      price: row.price as number,
+      quantity: row.quantity as number,
+      status: row.status as Order['status'],
+      createdAt: row.created_at as number,
+    }));
+  }
+
+  /** 체결 대기 중인 손절(stop) 주문 목록 — amm.onPriceTick이 트리거를 검사한다. */
+  getOpenStopOrders(): Order[] {
+    const db = getDb();
+    const rows = db
+      .prepare(
+        `SELECT * FROM orders WHERE order_type = 'stop' AND status = 'open' ORDER BY created_at ASC`
+      )
+      .all() as Record<string, unknown>[];
+    return rows.map((row) => ({
+      id: row.id as string,
+      characterId: row.character_id as string,
+      companyId: row.company_id as string,
+      side: row.side as 'buy' | 'sell',
+      type: 'stop' as const,
       price: row.price as number,
       quantity: row.quantity as number,
       status: row.status as Order['status'],

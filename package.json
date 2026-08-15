@@ -9,6 +9,7 @@
     "dev:mobile": "npm run start --workspace=@stock-survival/mobile",
     "build": "npm run build --workspaces --if-present",
     "db:migrate": "npm run db:migrate --workspace=@stock-survival/server",
-    "test": "npm run test --workspace=@stock-survival/server"
+    "test": "npm run test --workspace=@stock-survival/server",
+    "codemap": "node scripts/generate-codemap.mjs"
   }
 }

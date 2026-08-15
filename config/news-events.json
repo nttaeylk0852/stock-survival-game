@@ -1,0 +1,221 @@
+{
+  "eventTickProbability": 0.15,
+  "interestRateHighDelta": 0.01,
+  "inflationHighThreshold": 0.04,
+  "sectorHotThreshold": 1.3,
+  "sectorColdThreshold": 0.7,
+  "commoditySpikeThreshold": 1.5,
+  "events": [
+    {
+      "id": "chip_shortage",
+      "headlineVariants": [
+        "[속보] {company} 반도체 공급난 우려, {sector} 지수 급락",
+        "{sector} 업계, {commodity} 가격 {changePct}↑에 한숨",
+        "[기자] 반도체 팹 가동률 하락설, {sector} 투자심리 위축",
+        "[찌라시] {company} 웨이퍼 재고 바닥? {sector} 패닉셀",
+        "공급망 경고등: {commodity} 품귀, {sector} 직격탄"
+      ],
+      "baseWeight": 1.0,
+      "bias": { "commoditySpike.silicon": 2.5, "sectorHot.semiconductor": 2.0 },
+      "effects": { "sector.semiconductor": -0.12, "commodity.silicon": 0.25 },
+      "chain": [
+        { "after": 5, "effects": { "sector.technology": -0.06 }, "headline": "[속보] 공급난 여파, {sector} 장비주 동반 하락" }
+      ]
+    },
+    {
+      "id": "bio_regulation",
+      "headlineVariants": [
+        "[속보] {sector} 신약 임상 규제 강화, 업종 지수 {changePct}↓",
+        "[기자] 바이오 규제 리스크 재부각, {sector} 투자 위축",
+        "{sector} 업계, 규제 강화에 실적 전망 하향",
+        "[찌라시] 규제 당국, {company} 임상 중단 검토설",
+        "바이오 규제 칼바람, {sector} 주가 하락"
+      ],
+      "baseWeight": 1.0,
+      "bias": { "sectorHot.bio": 2.0, "interestRateLow": 1.2 },
+      "effects": { "sector.bio": -0.1 }
+    },
+    {
+      "id": "bio_breakthrough",
+      "headlineVariants": [
+        "[속보] {company} 신약 임상 성공, {sector} 지수 {changePct}↑",
+        "[기자] 바이오 신약 승인 기대감, {sector} 랠리",
+        "{sector} 업계, 혁신 신약 모멘텀 재점화",
+        "[찌라시] {company} 기술수출 임박설, {sector} 강세",
+        "바이오 반등 신호탄, {sector} 상승"
+      ],
+      "baseWeight": 1.0,
+      "bias": { "sectorCold.bio": 2.5 },
+      "effects": { "sector.bio": 0.15 }
+    },
+    {
+      "id": "finance_deregulation",
+      "headlineVariants": [
+        "[속보] 금융 규제 완화 추진, {sector} 지수 상승",
+        "[기자] 금융권 규제 완화 기대, {sector} 강세",
+        "{sector} 업계, 영업환경 개선 기대감 확산",
+        "[찌라시] 금융지주 합병 승인 임박, {company} 급등",
+        "금융 규제 완화, {sector} 상승 랠리"
+      ],
+      "baseWeight": 1.0,
+      "bias": { "interestRateLow": 1.8, "sectorCold.finance": 1.5 },
+      "effects": { "sector.finance": 0.08 }
+    },
+    {
+      "id": "finance_tightening",
+      "headlineVariants": [
+        "[속보] 금융 긴축 경고, {sector} 지수 {changePct}↓",
+        "[기자] 대출 규제 강화, {sector} 부담 가중",
+        "{sector} 업계, 금리 상승에 순이자마진 악화",
+        "[찌라시] {company} 부실채권 증가설, {sector} 약세",
+        "금융 긴축 여파, {sector} 하락세"
+      ],
+      "baseWeight": 1.0,
+      "bias": { "interestRateHigh": 2.0 },
+      "effects": { "sector.finance": -0.07 }
+    },
+    {
+      "id": "tech_bubble_burst",
+      "headlineVariants": [
+        "[속보] {sector} 거품 경고, 지수 {changePct}↓",
+        "[기자] 기술주 고평가 논란, {sector} 차익실현 매물",
+        "{sector} 업계, 밸류에이션 부담 재부각",
+        "[찌라시] {company} 대규모 매도 물량 출회설",
+        "기술주 거품 붕괴 우려, {sector} 급락"
+      ],
+      "baseWeight": 1.0,
+      "bias": { "sectorHot.technology": 2.5 },
+      "effects": { "sector.technology": -0.13 },
+      "chain": [
+        { "after": 4, "effects": { "sector.semiconductor": -0.05 }, "headline": "[속보] 거품 여파, {sector} 동반 약세" }
+      ]
+    },
+    {
+      "id": "energy_demand_surge",
+      "headlineVariants": [
+        "[속보] 에너지 수요 급증, {sector} 지수 {changePct}↑",
+        "[기자] 한파에 에너지 수요 폭증, {sector} 강세",
+        "{sector} 업계, 수요 급증에 실적 개선 기대",
+        "[찌라시] {company} 증산 계획 발표 임박설",
+        "에너지 수요 랠리, {sector} 상승"
+      ],
+      "baseWeight": 1.0,
+      "bias": { "commoditySpike.energy": 1.8 },
+      "effects": { "sector.energy": 0.1 }
+    },
+    {
+      "id": "silicon_rush",
+      "headlineVariants": [
+        "[속보] 실리콘 품귀, {commodity} 가격 {changePct}↑",
+        "[기자] {commodity} 공급 부족 심화, {sector} 비용 압박",
+        "{commodity} 가격 급등, {sector} 업계 원가 부담",
+        "[찌라시] {company} 실리콘 확보전 치열",
+        "실리콘 품귀, {sector} 하락 압력"
+      ],
+      "baseWeight": 1.0,
+      "bias": { "sectorHot.technology": 1.6 },
+      "effects": { "commodity.silicon": 0.35, "sector.semiconductor": -0.08 }
+    },
+    {
+      "id": "grain_poor_harvest",
+      "headlineVariants": [
+        "[속보] 곡물 작황 부진, {commodity} 가격 {changePct}↑",
+        "[기자] 이상기후로 곡물 생산량 급감",
+        "{commodity} 가격 상승, 식품 물가 압박",
+        "[찌라시] 곡물 비축량 바닥설 확산",
+        "곡물 작황 부진, {commodity} 강세"
+      ],
+      "baseWeight": 1.0,
+      "bias": { "inflationHigh": 1.5 },
+      "effects": { "commodity.grain": 0.25 }
+    },
+    {
+      "id": "oil_spike",
+      "headlineVariants": [
+        "[속보] 국제유가 급등, {commodity} {changePct}↑",
+        "[기자] 유가 급등에 {sector} 상승, 소비주 부담",
+        "{commodity} 가격 급등, 물가 상승 압력",
+        "[찌라시] 산유국 감산 연장 합의설",
+        "유가 급등, {sector} 수혜 기대"
+      ],
+      "baseWeight": 1.0,
+      "bias": { "inflationHigh": 1.8 },
+      "effects": { "commodity.energy": 0.3, "sector.energy": 0.06 },
+      "chain": [
+        { "after": 5, "effects": { "sector.technology": -0.04 }, "headline": "[속보] 유가 여파, {sector} 비용 증가" }
+      ]
+    },
+    {
+      "id": "inflation_shock",
+      "headlineVariants": [
+        "[속보] 인플레이션 쇼크, 원자재 가격 일제 급등",
+        "[기자] 물가 급등에 긴축 우려 확산",
+        "인플레 경고, {commodity} 등 원자재 강세",
+        "[찌라시] 중앙은행 긴급 회의 개최설",
+        "인플레 쇼크, 시장 변동성 확대"
+      ],
+      "baseWeight": 1.0,
+      "bias": { "inflationHigh": 2.5 },
+      "effects": { "commodity.energy": 0.1, "commodity.silicon": 0.1, "commodity.grain": 0.1, "sector.bio": -0.06 }
+    },
+    {
+      "id": "recession_warning",
+      "headlineVariants": [
+        "[속보] 경기 침체 경고, 전 섹터 동반 하락",
+        "[기자] 경기 둔화 신호에 투자심리 냉각",
+        "침체 우려, {sector} 등 전 업종 약세",
+        "[찌라시] 대형 기관 자금 회수 움직임",
+        "경기 침체 경고등, 시장 전반 하락"
+      ],
+      "baseWeight": 1.0,
+      "bias": { "interestRateHigh": 1.8, "sectorCold.finance": 1.5 },
+      "effects": { "sector.semiconductor": -0.05, "sector.technology": -0.05, "sector.energy": -0.05, "sector.bio": -0.05, "sector.finance": -0.05 }
+    },
+    {
+      "id": "rate_cut_rumor",
+      "headlineVariants": [
+        "[속보] 금리 인하 기대, {sector} 지수 상승",
+        "[기자] 완화적 통화정책 전망, 성장주 강세",
+        "금리 인하설, {sector} 등 금리민감주 상승",
+        "[찌라시] 중앙은행 금리 인하 검토 문건 유출",
+        "금리 인하 기대감, {sector} 랠리"
+      ],
+      "baseWeight": 1.0,
+      "bias": { "interestRateLow": 2.0 },
+      "effects": { "sector.finance": 0.05, "sector.technology": 0.04 }
+    },
+    {
+      "id": "supply_chain_disruption",
+      "headlineVariants": [
+        "[속보] 공급망 붕괴 우려, {sector} 지수 급락",
+        "[기자] 물류 병목 심화, 공급망 리스크 확산",
+        "{sector} 공급망 차질, 납기 지연 우려",
+        "[찌라시] {company} 부품 조달 중단설",
+        "공급망 붕괴 경고, {sector} 하락"
+      ],
+      "baseWeight": 1.0,
+      "bias": { "sectorHot.semiconductor": 1.8 },
+      "effects": { "sector.semiconductor": -0.08 },
+      "chain": [
+        { "after": 4, "effects": { "sector.technology": -0.05 }, "headline": "[속보] 공급망 여파, {sector} 동반 하락" },
+        { "after": 8, "effects": { "sector.energy": -0.03 }, "headline": "[속보] 물류 차질, {sector} 수요 위축" }
+      ]
+    },
+    {
+      "id": "logistics_crisis",
+      "headlineVariants": [
+        "[속보] 물류 대란, {commodity} 가격 급등",
+        "[기자] 운송 차질로 물류비 폭등, {sector} 부담",
+        "{commodity} 수송 지연, 가격 상승 압력",
+        "[찌라시] 항만 마비 사태 확산설",
+        "물류 대란, {sector} 물류비 급증"
+      ],
+      "baseWeight": 1.0,
+      "bias": { "commoditySpike.energy": 1.8 },
+      "effects": { "sector.energy": -0.06, "commodity.grain": 0.1 },
+      "chain": [
+        { "after": 5, "effects": { "commodity.energy": 0.12 }, "headline": "[속보] 물류 여파, {commodity} 추가 상승" }
+      ]
+    }
+  ]
+}

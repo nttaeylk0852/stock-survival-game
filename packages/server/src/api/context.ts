@@ -13,6 +13,11 @@ import { IntelModule } from '../modules/intel';
 import { WorldClockModule } from '../modules/world/clock';
 import { SurvivalModule } from '../modules/survival';
 import { SeasonModule } from '../modules/world/season';
+import { CircuitBreaker } from '../modules/market/circuit-breaker';
+import { CentralBankModule } from '../modules/economy/central-bank';
+import { ForcesModule } from '../modules/forces';
+import { MarketSession, MarketSessionModule } from '../modules/world/market-session';
+import { DailyActionsModule } from '../modules/players/daily-actions';
 
 /**
  * Aggregate of every constructed game module.
@@ -31,7 +36,13 @@ export interface GameContext {
   amm: AmmModule;
   governance: GovernanceModule;
   intel: IntelModule;
+  forces: ForcesModule;
+  centralBank: CentralBankModule;
+  circuitBreaker: CircuitBreaker;
   clock: WorldClockModule;
+  marketSession: MarketSession;
+  marketSessionModule: MarketSessionModule;
+  dailyActions: DailyActionsModule;
   survival: SurvivalModule;
   season: SeasonModule;
 }

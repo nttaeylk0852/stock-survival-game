@@ -4,9 +4,16 @@
     "profit": 0.3,
     "debt": -0.15,
     "rnd": 0.1,
-    "morale": 0.05,
-    "brand": 0.15
+    "morale": 0.05
   },
+  "brandRevenueMultiplierMin": 0.6,
+  "brandRevenueMultiplierMax": 1.4,
+  "managementCredibilityDefault": 50,
+  "managementVolatilitySensitivity": 0.6,
+  "managementGovernanceSensitivity": 1.0,
+  "managementRumorSensitivity": 0.8,
   "bankruptcyDebtRevenueRatio": 3.0,
-  "bankruptcyLossStreakTicks": 5
+  "bankruptcyLossStreakTicks": 5,
+  "defaultMargin": 0.3,
+  "defaultMaterialSensitivity": 10
 }

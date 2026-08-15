@@ -1,13 +1,55 @@
 import { initDb, runMigrations, ensureSystemAccounts, getDb, SYSTEM_ACCOUNTS } from '../db';
 import { bootstrapGame } from '../core/bootstrap';
 import { GameContext } from '../api/context';
-import { assert, assertEqual, assertThrows, test, summarize } from './harness';
+import { assert, assertEqual, assertClose, assertThrows, test, summarize } from './harness';
+import { deriveProfit } from '../modules/companies/pricing';
+import {
+  computeBrandMultiplier,
+  computeVolatilityFactor,
+  computeGovernancePassFactor,
+  computeRumorFakeRate,
+} from '../modules/companies/image';
+import { computeTargetInterestRate, applyInterestStep } from '../modules/economy/macro';
+import { NewsEvent } from '../core/config-loader';
+import {
+  NewsState,
+  computeEventWeight,
+  renderHeadline,
+  selectNewsEvent,
+} from '../modules/intel/news-events';
+import { largeCapIds } from '../modules/companies/pricing';
+import { computeMarketCap, shouldBailout, applyDilution } from '../modules/economy/central-bank';
+import { CircuitBreaker } from '../modules/market/circuit-breaker';
+import { Company, GameTime } from '@stock-survival/shared';
+import { valueStrategy, momentumStrategy, shortStrategy } from '../modules/forces/strategies';
+import { isMarketOpen, isSettlementWindow, isMainSession } from '../modules/world/market-session';
 
 async function setup(): Promise<GameContext> {
   initDb(':memory:');
   runMigrations();
   ensureSystemAccounts();
-  return bootstrapGame();
+  const ctx = await bootstrapGame();
+  // 묶음 6: 테스트는 개장 상태(09:00 이후)에서 시작 — 기존 테스트는 거래 가능을 전제.
+  ctx.marketSessionModule.onTick({
+    type: 'TICK',
+    gameTime: timeAt(10),
+    tickCount: 0,
+  });
+  return ctx;
+}
+
+/** 특정 게임 시각의 GameTime을 만든다. */
+function timeAt(hour: number): GameTime {
+  return { year: 2026, month: 1, day: 1, hour, minute: 0, totalMinutes: hour * 60 };
+}
+
+/** 시장 세션 모듈을 특정 시각으로 전진시킨다 (개장/휴장/리셋 판정용). */
+function driveTime(ctx: GameContext, hour: number): void {
+  ctx.marketSessionModule.onTick({
+    type: 'TICK',
+    gameTime: timeAt(hour),
+    tickCount: 1,
+  });
 }
 
 function newCharacter(ctx: GameContext, name: string) {
@@ -15,10 +57,368 @@ function newCharacter(ctx: GameContext, name: string) {
   return ctx.players.createCharacter(userId, name);
 }
 
+async function runEconomyTests(ctx: GameContext, companyId: string): Promise<void> {
+  await test('deriveProfit matches the revenue/margin/material/interest formula', () => {
+    const profit = deriveProfit(80, 0.3, 1.0, 10, 30, 0.05);
+    assertEqual(
+      profit,
+      80 * 0.3 - 1.0 * 10 - 30 * 0.05,
+      'profit = revenue*margin - materialIndex*materialSensitivity - debt*rate'
+    );
+  });
+
+  await test('taylor target rate rises when inflation and growth overshoot', () => {
+    const target = computeTargetInterestRate(0.05, 0.05, 0.02, 0.04, 0.02, 0.5, 0.1);
+    assert(target > 0.05, 'target rate should exceed base rate when both overshoot');
+  });
+
+  await test('taylor target rate falls when inflation and growth undershoot', () => {
+    const target = computeTargetInterestRate(0.05, 0.0, 0.02, -0.02, 0.02, 0.5, 0.1);
+    assert(target < 0.05, 'target rate should fall below base rate when both undershoot');
+  });
+
+  await test('interest step uses big step beyond the gap threshold', () => {
+    // gap 0.005 < threshold(0.01) → normal step (0.0025)
+    const small = applyInterestStep(0.05, 0.055, 0.01, 0.0025, 0.005);
+    assertClose(small, 0.05 + 0.0025, 1e-9, 'small gap moves by the normal step');
+    // gap 0.02 > threshold(0.01) → big step (0.005)
+    const big = applyInterestStep(0.05, 0.07, 0.01, 0.0025, 0.005);
+    assertClose(big, 0.05 + 0.005, 1e-9, 'big gap moves by the big step');
+  });
+
+  await test('price tick derives profit and exposes named price factors', () => {
+    const company = ctx.companies.getCompany(companyId)!;
+    ctx.companies.onPriceTick({
+      type: 'PRICE_TICK',
+      gameTime: ctx.tickLoop.getGameTime(),
+      tickCount: 1,
+    });
+
+    const updated = ctx.companies.getCompany(companyId)!;
+    const brandMultiplier = computeBrandMultiplier(
+      updated.stats.brand,
+      ctx.config.companies.brandRevenueMultiplierMin,
+      ctx.config.companies.brandRevenueMultiplierMax
+    );
+    const expected = deriveProfit(
+      updated.stats.revenue * brandMultiplier,
+      updated.stats.margin ?? ctx.config.companies.defaultMargin,
+      ctx.macro.getMaterialIndex(),
+      updated.stats.materialSensitivity ?? ctx.config.companies.defaultMaterialSensitivity,
+      updated.stats.debt,
+      ctx.macro.getInterestRate()
+    );
+    assertClose(updated.stats.profit, expected, 1e-9, 'stored profit must equal derived profit');
+
+    const factors = ctx.companies.getPriceFactors(companyId);
+    assert(factors.length > 0, 'price factors must be recorded after a tick');
+    assert(
+      factors.every((f) => typeof f.name === 'string' && f.name.length > 0),
+      'every factor must expose a name'
+    );
+    assert(
+      factors.every((f) => f.direction === '▲' || f.direction === '▼' || f.direction === '—'),
+      'every factor must expose only a direction arrow'
+    );
+  });
+}
+
+function makeCompany(over: Partial<Company> = {}): Company {
+  return {
+    id: 'c1',
+    name: 'TestCo',
+    basePrice: 100,
+    stats: { revenue: 100, profit: 10, debt: 250, rnd: 0, morale: 0, brand: 0 },
+    sectors: ['technology'],
+    supplySensitivity: 1,
+    sharesOutstanding: 1000,
+    currentPrice: 100,
+    status: 'ACTIVE',
+    lossStreakTicks: 0,
+    ...over,
+  };
+}
+
+async function runCentralBankTests(ctx: GameContext, companyId: string): Promise<void> {
+  await test('computeMarketCap = currentPrice × sharesOutstanding', () => {
+    assertEqual(computeMarketCap(makeCompany()), 100 * 1000, 'market cap formula');
+  });
+
+  await test('largeCapIds returns top-N ids by market cap descending', () => {
+    const big = makeCompany({ id: 'big', currentPrice: 100, sharesOutstanding: 1000 });
+    const mid = makeCompany({ id: 'mid', currentPrice: 50, sharesOutstanding: 100 });
+    const small = makeCompany({ id: 'small', currentPrice: 10, sharesOutstanding: 10 });
+    const ids = largeCapIds([small, big, mid], 2);
+    assertEqual(ids.length, 2, 'limited to topN');
+    assertEqual(ids[0], 'big', 'largest market cap first');
+    assertEqual(ids[1], 'mid', 'second largest next');
+  });
+
+  await test('shouldBailout only for large cap with high debt and deep drawdown', () => {
+    const peak = [100, 100, 50];
+    const risky = makeCompany({
+      currentPrice: 50,
+      stats: { revenue: 100, profit: 0, debt: 260, rnd: 0, morale: 0, brand: 0 },
+    });
+    assert(
+      shouldBailout(risky, true, peak, 2.5, 0.4),
+      'large cap + debt>2.5 + drawdown 50% should bailout'
+    );
+    assert(!shouldBailout(risky, false, peak, 2.5, 0.4), 'small/mid cap must not bailout');
+    const lowDebt = makeCompany({
+      currentPrice: 50,
+      stats: { revenue: 100, profit: 0, debt: 200, rnd: 0, morale: 0, brand: 0 },
+    });
+    assert(!shouldBailout(lowDebt, true, peak, 2.5, 0.4), 'debt ratio 2.0 must not bailout');
+    assert(
+      !shouldBailout(makeCompany({ currentPrice: 90 }), true, [100, 100, 90], 2.5, 0.4),
+      'small drawdown must not bailout'
+    );
+  });
+
+  await test('applyDilution raises shares, lowers price and debt, preserves market cap', () => {
+    const c = makeCompany({
+      currentPrice: 100,
+      sharesOutstanding: 1000,
+      stats: { revenue: 100, profit: 0, debt: 200, rnd: 0, morale: 0, brand: 0 },
+    });
+    const d = applyDilution(c, 0.5, 1.5);
+    assertClose(d.sharesOutstanding, 1500, 1e-9, 'shares × multiplier');
+    assertClose(d.currentPrice, 100 / 1.5, 1e-9, 'price diluted');
+    assertClose(d.debt, 100, 1e-9, 'debt relieved by ratio');
+    assertClose(d.sharesOutstanding * d.currentPrice, 100 * 1000, 1e-9, 'market cap preserved');
+  });
+
+  await test('CircuitBreaker halts then reopens after ticks', () => {
+    const cb = new CircuitBreaker();
+    assert(!cb.isHalted(), 'starts open');
+    cb.halt(2);
+    assert(cb.isHalted(), 'halts on request');
+    cb.tick();
+    assert(cb.isHalted(), 'still halted after one tick');
+    cb.tick();
+    assert(!cb.isHalted(), 'reopens after ticks');
+  });
+
+  await test('large-cap clamp is tighter than default clamp', () => {
+    assert(
+      ctx.config.centralBank.largeCapStabilityMaxDrop < ctx.config.market.priceStabilityMaxDrop,
+      'large-cap drop clamp must be narrower'
+    );
+  });
+
+  await test('circuit breaker blocks trading until it reopens', () => {
+    const character = newCharacter(ctx, 'Haltee');
+    ctx.circuitBreaker.halt(3);
+    assertThrows(
+      () => ctx.amm.trade(character.id, companyId, 'buy', 1),
+      'trade must throw while halted'
+    );
+    ctx.circuitBreaker.tick();
+    ctx.circuitBreaker.tick();
+    ctx.circuitBreaker.tick();
+    ctx.amm.trade(character.id, companyId, 'buy', 1);
+  });
+}
+
+async function runForceTests(ctx: GameContext, companyId: string): Promise<void> {
+  await test('valueStrategy buys undervalued and sells overvalued', () => {
+    assertEqual(
+      valueStrategy(makeCompany({ currentPrice: 90 }), 100, { gapThreshold: 0.05 }).side,
+      'buy',
+      'undervalued company should trigger a buy'
+    );
+    assertEqual(
+      valueStrategy(makeCompany({ currentPrice: 110 }), 100, { gapThreshold: 0.05 }).side,
+      'sell',
+      'overvalued company should trigger a sell'
+    );
+  });
+
+  await test('momentumStrategy follows an uptrend and a downtrend', () => {
+    assertEqual(
+      momentumStrategy([100, 101, 102, 103, 104, 105], { window: 5, returnThreshold: 0.03 }).side,
+      'buy',
+      'rising trend should trigger a buy'
+    );
+    assertEqual(
+      momentumStrategy([105, 104, 103, 102, 101, 100], { window: 5, returnThreshold: 0.03 }).side,
+      'sell',
+      'falling trend should trigger a sell'
+    );
+  });
+
+  await test('shortStrategy only attacks overvalued companies with bad news', () => {
+    const overvalued = makeCompany({ currentPrice: 120 });
+    assertEqual(
+      shortStrategy(overvalued, 100, true, { overvalueThreshold: 0.1 }).side,
+      'sell',
+      'overvalued + bad news should short'
+    );
+    assertEqual(
+      shortStrategy(overvalued, 100, false, { overvalueThreshold: 0.1 }).side,
+      null,
+      'overvalued without bad news should hold'
+    );
+  });
+
+  await test('forces init mints starting capital per profile', () => {
+    assertEqual(
+      ctx.forces.getProfileIds().length,
+      ctx.config.forces.profiles.length,
+      'one account per profile'
+    );
+    for (const profile of ctx.config.forces.profiles) {
+      assertEqual(
+        ctx.ledger.getBalance(ctx.forces.getAccountId(profile.id)),
+        profile.startingCapital,
+        `${profile.id} capital must be minted`
+      );
+    }
+    assertEqual(ctx.ledger.assertConservation().ok, true, 'minting must preserve conservation');
+  });
+
+  await test('force market order moves AMM price and conserves ledger', () => {
+    const profile = ctx.config.forces.profiles[0];
+    const accountId = ctx.forces.getAccountId(profile.id);
+    const before = getDb()
+      .prepare(`SELECT cash_reserve, share_reserve FROM amm_pools WHERE company_id = ?`)
+      .get(companyId) as { cash_reserve: number; share_reserve: number };
+
+    const result = ctx.amm.marketOrder(accountId, profile.id, companyId, 'buy', 10);
+    assert(result.total > 0, 'force buy should cost cash');
+
+    const after = getDb()
+      .prepare(`SELECT cash_reserve, share_reserve FROM amm_pools WHERE company_id = ?`)
+      .get(companyId) as { cash_reserve: number; share_reserve: number };
+    assert(
+      after.cash_reserve / after.share_reserve > before.cash_reserve / before.share_reserve,
+      'buying from the AMM should raise the implied pool price'
+    );
+    assertEqual(ctx.ledger.assertConservation().ok, true, 'force trade must preserve conservation');
+  });
+
+  await test('forces onPriceTick opens a long on clear undervaluation', () => {
+    const profileId = 'value';
+    getDb().prepare(`UPDATE companies SET current_price = ? WHERE id = ?`).run(10, companyId);
+    ctx.forces.onPriceTick({
+      type: 'PRICE_TICK',
+      gameTime: ctx.tickLoop.getGameTime(),
+      tickCount: 1,
+    });
+    assert(
+      ctx.forces.getPosition(profileId, companyId) > 0,
+      'value force should buy the undervalued company'
+    );
+  });
+}
+
+async function runTimeDesignTests(ctx: GameContext, companyId: string): Promise<void> {
+  const open = ctx.config.world.marketOpenHour;
+  const close = ctx.config.world.marketCloseHour;
+  const settlementEnd = ctx.config.world.settlementEndHour;
+
+  await test('market open/close follows the 09:00–01:00 schedule', () => {
+    assertEqual(isMarketOpen(timeAt(8), open, close), false, '08:00 should be closed');
+    assertEqual(isMarketOpen(timeAt(9), open, close), true, '09:00 should be open');
+    assertEqual(isMarketOpen(timeAt(23), open, close), true, '23:00 should be open');
+    assertEqual(isMarketOpen(timeAt(0), open, close), true, '00:00 should be open');
+    assertEqual(isMarketOpen(timeAt(1), open, close), false, '01:00 should be closed');
+    assertEqual(isMarketOpen(timeAt(4), open, close), false, '04:00 should be closed');
+  });
+
+  await test('main session matches configured hours', () => {
+    const hours = ctx.config.world.mainSessionHours;
+    assertEqual(isMainSession(timeAt(hours[0]), hours), true, 'configured hour is a main session');
+    assertEqual(isMainSession(timeAt(3), hours), false, 'off-session hour must not match');
+  });
+
+  await test('settlement window spans 01:00–05:00', () => {
+    assertEqual(isSettlementWindow(timeAt(2), close, settlementEnd), true, '02:00 in settlement');
+    assertEqual(isSettlementWindow(timeAt(6), close, settlementEnd), false, '06:00 out of settlement');
+  });
+
+  await test('trading is blocked while the market is closed', () => {
+    const character = newCharacter(ctx, 'NightTrader');
+    driveTime(ctx, 4);
+    assertThrows(
+      () => ctx.amm.trade(character.id, companyId, 'buy', 1),
+      'trading during closed market must throw'
+    );
+  });
+
+  await test('trading works while the market is open', () => {
+    const character = newCharacter(ctx, 'DayTrader');
+    driveTime(ctx, 10);
+    const result = ctx.amm.trade(character.id, companyId, 'buy', 1);
+    assertEqual(result.method, 'amm', 'market order should execute during open hours');
+  });
+
+  await test('stop-loss order triggers a market sell on price drop', () => {
+    const character = newCharacter(ctx, 'Stopper');
+    driveTime(ctx, 10);
+    ctx.amm.buyFromAmm(character.id, companyId, 10);
+    const stopPrice = ctx.companies.getCompany(companyId)!.currentPrice * 0.5;
+    ctx.orderBook.placeOrder(character.id, companyId, 'sell', stopPrice, 10, 'stop');
+
+    getDb().prepare(`UPDATE companies SET current_price = ? WHERE id = ?`).run(stopPrice - 1, companyId);
+    ctx.amm.onPriceTick({ type: 'PRICE_TICK', gameTime: ctx.tickLoop.getGameTime(), tickCount: 1 });
+
+    assertEqual(
+      ctx.orderBook.getPortfolioEntry(character.id, companyId).shares,
+      0,
+      'stop-loss should have liquidated the position'
+    );
+  });
+
+  await test('daily trade limit caps the number of trades', () => {
+    const character = newCharacter(ctx, 'SpamTrader');
+    driveTime(ctx, 10);
+    const limit = ctx.config.market.dailyTradeLimit;
+    for (let i = 0; i < limit; i++) {
+      ctx.amm.trade(character.id, companyId, 'buy', 1);
+    }
+    assertThrows(
+      () => ctx.amm.trade(character.id, companyId, 'buy', 1),
+      'trading beyond the daily limit must throw'
+    );
+  });
+
+  await test('daily intel purchase limit caps info buys', () => {
+    const character = newCharacter(ctx, 'InfoHoarder');
+    const limit = ctx.config.intel.dailyIntelPurchaseLimit;
+    const rumors = Array.from({ length: limit + 1 }, () => ctx.intel.generateRumor(companyId));
+    for (let i = 0; i < limit; i++) {
+      ctx.intel.purchaseIntel(character.id, rumors[i].id);
+    }
+    assertThrows(
+      () => ctx.intel.purchaseIntel(character.id, rumors[limit].id),
+      'intel purchase beyond the daily limit must throw'
+    );
+  });
+
+  await test('daily actions reset when the market reopens', () => {
+    const character = newCharacter(ctx, 'Resetter');
+    driveTime(ctx, 10);
+    ctx.amm.trade(character.id, companyId, 'buy', 1);
+    assert(ctx.dailyActions.getState(character.id).tradesUsed > 0, 'trade should be counted');
+
+    driveTime(ctx, 4); // 휴장
+    driveTime(ctx, 9); // 재개장 → 리셋
+    assertEqual(
+      ctx.dailyActions.getState(character.id).tradesUsed,
+      0,
+      'daily actions should reset at market open'
+    );
+  });
+}
+
 async function main(): Promise<void> {
   console.log('Stock Survival — server test suite\n');
   const ctx = await setup();
   const companyId = ctx.companies.getAllCompanies()[0].id;
+
+  await runEconomyTests(ctx, companyId);
 
   await test('character spawns with starter cash from config', () => {
     const character = newCharacter(ctx, 'Spawner');
@@ -95,6 +495,11 @@ async function main(): Promise<void> {
 
   await runSurvivalTests(ctx);
   await runGameplayTests(ctx, companyId);
+  await runSectorEventTests(ctx);
+  await runCentralBankTests(ctx, companyId);
+  await runForceTests(ctx, companyId);
+  await runImageAxisTests(ctx, companyId);
+  await runTimeDesignTests(ctx, companyId);
 
   process.exit(summarize());
 }
@@ -206,6 +611,133 @@ async function runGameplayTests(ctx: GameContext, companyId: string): Promise<vo
   await test('ledger conservation holds after all activity', () => {
     const conservation = ctx.ledger.assertConservation();
     assertEqual(conservation.ok, true, 'total supply must equal total minted');
+  });
+}
+
+async function runSectorEventTests(ctx: GameContext): Promise<void> {
+  await test('rateSensitivity: rate rise moves negative-sensitivity sectors down and finance up', () => {
+    const before = ctx.sectors.getIndices();
+    ctx.sectors.onInterestRateChange(ctx.macro.getInterestRate() + 0.01);
+    const after = ctx.sectors.getIndices();
+    assert(
+      after.semiconductor < before.semiconductor,
+      'semiconductor(-1.2) should fall when rates rise'
+    );
+    assert(after.finance > before.finance, 'finance(+0.8) should rise when rates rise');
+  });
+
+  await test('applySectorEffect clamps to [indexMin, indexMax]', () => {
+    ctx.sectors.applySectorEffect('semiconductor', -100);
+    assertClose(
+      ctx.sectors.getIndices().semiconductor,
+      ctx.config.sectors.indexMin,
+      1e-9,
+      'index must clamp to indexMin'
+    );
+    ctx.sectors.applySectorEffect('semiconductor', 1000);
+    assertClose(
+      ctx.sectors.getIndices().semiconductor,
+      ctx.config.sectors.indexMax,
+      1e-9,
+      'index must clamp to indexMax'
+    );
+  });
+
+  await test('selectNewsEvent reflects state bias via injected rand', () => {
+    const config = ctx.config.newsEvents;
+    const state: NewsState = {
+      interestRate: 0.05,
+      baseInterestRate: 0.05,
+      inflationRate: 0,
+      commodities: { silicon: 200 },
+      commodityBasePrices: { silicon: 80 },
+      sectorIndices: { semiconductor: 1.0 },
+    };
+    const biased = config.events.find((e) => e.bias?.['commoditySpike.silicon']);
+    assert(biased !== undefined, 'an event with silicon spike bias should exist');
+    const weight = computeEventWeight(biased!, state, config);
+    assert(weight > biased!.baseWeight, 'active bias must inflate the event weight');
+
+    const first = selectNewsEvent(config.events, state, config, () => 0);
+    assert(first !== null, 'selection with rand=0 must return an event');
+  });
+
+  await test('renderHeadline substitutes {company}/{sector} slots', () => {
+    const out = renderHeadline('[속보] {company} {sector} 지수 급락', {
+      company: '삼성전자',
+      sector: 'semiconductor',
+    });
+    assertEqual(out, '[속보] 삼성전자 semiconductor 지수 급락', 'slots must be substituted');
+  });
+
+  await test('chain fires after its configured tick delay', () => {
+    const before = ctx.sectors.getIndices().technology;
+    const event: NewsEvent = {
+      id: 'test_chain',
+      headlineVariants: ['테스트'],
+      baseWeight: 1,
+      effects: {},
+      chain: [{ after: 2, effects: { 'sector.technology': -0.5 } }],
+    };
+    ctx.intel.fireEvent(event);
+    ctx.intel.processPendingChain();
+    assertClose(ctx.sectors.getIndices().technology, before, 1e-9, 'chain must not fire early');
+    ctx.intel.processPendingChain();
+    assert(
+      ctx.sectors.getIndices().technology < before,
+      'chained effect must apply after the delay'
+    );
+  });
+
+  await test('company bankruptcy triggers sector contagion', () => {
+    const sector = ctx.companies.getAllCompanies()[0].sectors[0];
+    const before = ctx.sectors.getIndices()[sector];
+    ctx.sectors.onCompanyBankrupt([sector]);
+    assert(ctx.sectors.getIndices()[sector] < before, 'sector index must drop on bankruptcy');
+  });
+}
+
+async function runImageAxisTests(ctx: GameContext, companyId: string): Promise<void> {
+  await test('brand multiplier scales 0/50/100 within [min, max]', () => {
+    assertClose(computeBrandMultiplier(0, 0.6, 1.4), 0.6, 1e-9, 'brand 0 → min');
+    assertClose(computeBrandMultiplier(50, 0.6, 1.4), 1.0, 1e-9, 'brand 50 → midpoint');
+    assertClose(computeBrandMultiplier(100, 0.6, 1.4), 1.4, 1e-9, 'brand 100 → max');
+  });
+
+  await test('low credibility widens the price volatility clamp', () => {
+    const neutral = computeVolatilityFactor(50, 50, 0.6);
+    const bad = computeVolatilityFactor(0, 50, 0.6);
+    const good = computeVolatilityFactor(100, 50, 0.6);
+    assertClose(neutral, 1.0, 1e-9, 'neutral credibility → factor 1');
+    assert(bad > neutral, 'low credibility → wider clamp (more volatile)');
+    assert(good < neutral, 'high credibility → tighter clamp (less volatile)');
+  });
+
+  await test('low credibility lowers the governance pass factor', () => {
+    const neutral = computeGovernancePassFactor(50, 50, 1.0);
+    const bad = computeGovernancePassFactor(0, 50, 1.0);
+    const good = computeGovernancePassFactor(100, 50, 1.0);
+    assertClose(neutral, 1.0, 1e-9, 'neutral credibility → factor 1');
+    assert(bad < neutral, 'low credibility → harder to pass');
+    assert(good > neutral, 'high credibility → easier to pass');
+  });
+
+  await test('low credibility raises the rumor fake rate', () => {
+    const neutral = computeRumorFakeRate(0.2, 50, 50, 0.8);
+    const bad = computeRumorFakeRate(0.2, 0, 50, 0.8);
+    const good = computeRumorFakeRate(0.2, 100, 50, 0.8);
+    assertClose(neutral, 0.2, 1e-9, 'neutral credibility → base rate');
+    assert(bad > neutral, 'low credibility → more fake rumors');
+    assert(good < neutral, 'high credibility → fewer fake rumors');
+  });
+
+  await test('seed company exposes both image axes', () => {
+    const company = ctx.companies.getCompany(companyId)!;
+    assert(typeof company.stats.brand === 'number', 'brand axis must exist');
+    assert(
+      typeof company.stats.managementCredibility === 'number',
+      'management credibility axis must exist'
+    );
   });
 }
 

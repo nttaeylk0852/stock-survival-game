@@ -52,6 +52,12 @@ async function main(): Promise<void> {
   ctx.intel.onRumor((item) => {
     wsServer.broadcastNews(item.title, item.body, item.companyId);
   });
+  ctx.intel.onNews((news) => {
+    wsServer.broadcastNews(news.title, news.body, news.companyId);
+  });
+  ctx.sectors.onBankruptcy((sectors) => {
+    wsServer.broadcastNews('[속보] 파산 전염', `${sectors.join(', ')} 섹터 지수 하락`, null);
+  });
 
   // 5. Tick loop
   ctx.tickLoop.start();

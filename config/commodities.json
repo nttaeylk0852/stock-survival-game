@@ -1,0 +1,5 @@
+{
+  "energy": { "basePrice": 100, "cpiWeight": 0.5, "volatility": 0.02 },
+  "silicon": { "basePrice": 80, "cpiWeight": 0.3, "volatility": 0.03 },
+  "grain": { "basePrice": 50, "cpiWeight": 0.2, "volatility": 0.015 }
+}

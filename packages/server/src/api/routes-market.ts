@@ -24,6 +24,7 @@ export function attachMarketRoutes(router: Router, ctx: GameContext): Router {
         priceHistory: ctx.companies.getPriceHistory(company.id),
         openOrders: ctx.orderBook.getOpenOrders(company.id),
         userInfluence: ctx.influence.getUserInfluence(company.id),
+        priceFactors: ctx.companies.getPriceFactors(company.id),
       });
     })
   );
@@ -32,12 +33,13 @@ export function attachMarketRoutes(router: Router, ctx: GameContext): Router {
   router.post(
     '/trade',
     handle((req, res) => {
-      const { characterId, companyId, side, quantity, limitPrice } = req.body as {
+      const { characterId, companyId, side, quantity, limitPrice, orderType } = req.body as {
         characterId?: string;
         companyId?: string;
         side?: 'buy' | 'sell';
         quantity?: number;
         limitPrice?: number;
+        orderType?: 'limit' | 'stop';
       };
       if (!characterId || !companyId || !side || !quantity) {
         throw new Error('characterId, companyId, side and quantity are required');
@@ -47,11 +49,12 @@ export function attachMarketRoutes(router: Router, ctx: GameContext): Router {
       const character = ctx.players.getCharacter(characterId);
       if (!character || !character.isAlive) throw new Error('Character not alive');
 
-      const result = ctx.amm.trade(characterId, companyId, side, quantity, limitPrice);
+      const result = ctx.amm.trade(characterId, companyId, side, quantity, limitPrice, orderType);
       ok(res, {
         ...result,
         balance: ctx.ledger.getBalance(character.accountId),
         shares: ctx.orderBook.getPortfolioEntry(characterId, companyId).shares,
+        dailyActions: ctx.dailyActions.getState(characterId),
       });
     })
   );
@@ -161,6 +164,7 @@ function attachIntelRoutes(router: Router, ctx: GameContext): Router {
         tickCount: ctx.tickLoop.getTickCount(),
         macro: ctx.macro.getState(),
         season: ctx.season.getSeasonInfo(),
+        market: ctx.marketSession.getState(),
       };
       ok(res, { ...state, sectors: ctx.sectors.getIndices() });
     })

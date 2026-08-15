@@ -6,5 +6,14 @@
     "bio": 1.0,
     "finance": 1.0
   },
-  "volatilityPerTick": 0.02
+  "rateSensitivity": {
+    "semiconductor": -1.2,
+    "technology": -1.5,
+    "energy": -0.8,
+    "bio": -2.0,
+    "finance": 0.8
+  },
+  "sectorContagionDrop": 0.05,
+  "indexMin": 0.5,
+  "indexMax": 2.0
 }

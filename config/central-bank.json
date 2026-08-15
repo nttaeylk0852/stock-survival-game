@@ -1,0 +1,13 @@
+{
+  "largeCapTopN": 5,
+  "largeCapStabilityMaxDrop": 0.2,
+  "largeCapStabilityMaxGain": 0.15,
+  "bailoutDebtRevenueRatio": 2.5,
+  "bailoutDrawdownThreshold": 0.4,
+  "bailoutDebtReliefRatio": 0.5,
+  "bailoutDilutionMultiplier": 1.5,
+  "bailoutCooldownTicks": 200,
+  "circuitBreakerIndexDrop": 0.15,
+  "circuitBreakerHaltTicks": 20,
+  "circuitBreakerCooldownTicks": 300
+}

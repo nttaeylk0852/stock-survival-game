@@ -20,6 +20,9 @@ export interface CompanyStats {
   rnd: number;
   morale: number;
   brand: number;
+  margin?: number;
+  materialSensitivity?: number;
+  managementCredibility?: number;
 }
 
 export type CompanyStatus = 'ACTIVE' | 'DELISTED' | 'BANKRUPT';
@@ -65,7 +68,8 @@ export type LedgerReason =
   | 'BOND_BUY'
   | 'BOND_SELL'
   | 'JOB_INCOME'
-  | 'AMM_TRADE';
+  | 'AMM_TRADE'
+  | 'FORCE_CAPITAL';
 
 export interface LedgerEntry {
   id: string;
@@ -86,6 +90,7 @@ export interface OrderSide {
 
 export interface Order extends OrderSide {
   id: string;
+  type: 'limit' | 'stop';
   createdAt: number;
   status: 'open' | 'filled' | 'cancelled';
 }
@@ -122,6 +127,9 @@ export interface MacroState {
   interestRate: number;
   moneySupply: number;
   inflationRate: number;
+  commodities: Record<string, number>;
+  businessCycle: { phase: number; value: number };
+  marketGrowthRate: number;
 }
 
 export interface SeasonInfo {
@@ -131,11 +139,26 @@ export interface SeasonInfo {
   medals: string[];
 }
 
+export interface MarketSessionState {
+  open: boolean;
+  isMainSession: boolean;
+  volatilityMultiplier: number;
+  newsMultiplier: number;
+}
+
+export interface DailyActionsState {
+  tradesUsed: number;
+  tradeLimit: number;
+  intelUsed: number;
+  intelLimit: number;
+}
+
 export interface WorldState {
   gameTime: GameTime;
   tickCount: number;
   macro: MacroState;
   season: SeasonInfo;
+  market: MarketSessionState;
 }
 
 export interface WsMessage {

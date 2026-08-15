@@ -84,6 +84,7 @@ export class GameWebSocketServer {
       tickCount: this.ctx.tickLoop.getTickCount(),
       macro: this.ctx.macro.getState(),
       season: this.ctx.season.getSeasonInfo(),
+      market: this.ctx.marketSession.getState(),
     };
   }
 

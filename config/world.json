@@ -5,5 +5,11 @@
   "realSecondsPerGameMinute": 1,
   "priceTickIntervalSeconds": 30,
   "survivalTickIntervalSeconds": 60,
-  "seasonLengthDays": 90
+  "seasonLengthDays": 90,
+  "marketOpenHour": 9,
+  "marketCloseHour": 1,
+  "settlementEndHour": 5,
+  "mainSessionHours": [9, 12, 18, 20],
+  "mainSessionVolatilityBoost": 2.0,
+  "mainSessionNewsBoost": 2.5
 }

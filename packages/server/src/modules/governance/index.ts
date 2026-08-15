@@ -6,6 +6,7 @@ import { GameModule } from '../../core/module-registry';
 import { CompaniesModule } from '../companies';
 import { OrderBookModule } from '../market/orderbook';
 import { InfluenceModule } from '../market/influence';
+import { computeGovernancePassFactor } from '../companies/image';
 
 export class GovernanceModule implements GameModule {
   name = 'governance';
@@ -86,8 +87,17 @@ export class GovernanceModule implements GameModule {
       const totalUserShares = this.getTotalUserShares(agenda.companyId);
       const maxInfluenceShares = company.sharesOutstanding * this.config.market.userInfluenceCap;
 
+      const credibility =
+        company.stats.managementCredibility ??
+        this.config.companies.managementCredibilityDefault;
+      const passFactor = computeGovernancePassFactor(
+        credibility,
+        this.config.companies.managementCredibilityDefault,
+        this.config.companies.managementGovernanceSensitivity
+      );
+
       let status: Agenda['status'] = 'rejected';
-      if (agenda.votesFor > agenda.votesAgainst) {
+      if (agenda.votesFor * passFactor > agenda.votesAgainst) {
         status = 'passed';
         const influenceRatio = Math.min(1, totalUserShares / maxInfluenceShares);
         const appliedDelta = agenda.delta * influenceRatio;

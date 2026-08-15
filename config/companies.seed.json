@@ -9,7 +9,10 @@
       "debt": 30,
       "rnd": 60,
       "morale": 70,
-      "brand": 55
+      "brand": 55,
+      "margin": 0.3,
+      "materialSensitivity": 10,
+      "managementCredibility": 45
     },
     "sectors": ["semiconductor", "technology"],
     "supplySensitivity": 0.7,

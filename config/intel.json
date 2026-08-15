@@ -2,5 +2,6 @@
   "rumorFakeRate": 0.2,
   "infoPurchaseCostBase": 1000,
   "majorShareholderThreshold": 0.05,
-  "earlyWarningLeadTicks": 3
+  "earlyWarningLeadTicks": 3,
+  "dailyIntelPurchaseLimit": 5
 }

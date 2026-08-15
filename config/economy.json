@@ -4,5 +4,17 @@
   "baseInterestRate": 0.05,
   "bondIssueRate": 0.03,
   "newbieChurnPenaltyThreshold": 0.08,
-  "newbieChurnPenaltyMultiplier": 1.5
+  "newbieChurnPenaltyMultiplier": 1.5,
+  "taylor": {
+    "a": 0.5,
+    "b": 0.1,
+    "targetGrowthRate": 0.02,
+    "normalStep": 0.0025,
+    "bigStep": 0.005,
+    "bigGapThreshold": 0.01
+  },
+  "businessCycle": {
+    "periodDays": 90,
+    "amplitude": 0.1
+  }
 }

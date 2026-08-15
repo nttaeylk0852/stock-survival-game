@@ -1,0 +1,9 @@
+1. 작업 시작 시 docs/PROGRESS.md 를 먼저 읽고 현재 진행 상태(다음 작업)를 파악한다.
+2. 설계 기준은 README.md §0~§10 "설계 결정 문서"를 따른다.
+3. 한 번에 PROGRESS.md 의 묶음 1개씩만 구현하고, 끝나면 npm test 로 검증한다.
+4. 밸런스 수치는 config/*.json 으로만 조정한다 (코드 변경 금지).
+5. 묶음 완료 시 docs/PROGRESS.md 의 체크박스와 "다음 작업" 항목을 갱신한다.
+6. 컨텍스트 읽기 순서를 고정한다: docs/PROGRESS.md → docs/PLAN.md → docs/modules/*.md → docs/codemap.md 순으로만 읽고, 원본 코드는 "이번 작업이 직접 수정할 파일"만 연다. 전역 grep·전체 파일 읽기 금지.
+7. 계획(plan)은 docs/PLAN.md 에 "실행형 계획"(파일별 변경 전/후 코드 스니펫 포함)으로 기록한다. 구현 시 재탐색이 필요하면 그 계획은 불완전한 것.
+8. 구현은 docs/PLAN.md 만 보고 진행한다. PLAN.md 에 이미 기록된 컨텍스트는 다시 읽지 않는다.
+9. 구현 완료 + npm test 통과 시 docs/PLAN.md 를 빈 템플릿으로 초기화한다.

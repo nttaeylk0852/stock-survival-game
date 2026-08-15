@@ -92,6 +92,7 @@ export function runMigrations(): void {
       character_id TEXT NOT NULL,
       company_id TEXT NOT NULL,
       side TEXT NOT NULL,
+      order_type TEXT NOT NULL DEFAULT 'limit',
       price REAL NOT NULL,
       quantity REAL NOT NULL,
       status TEXT NOT NULL DEFAULT 'open',
@@ -170,7 +171,20 @@ export function runMigrations(): void {
       purchased_at INTEGER NOT NULL,
       FOREIGN KEY (character_id) REFERENCES characters(id)
     );
+
+    CREATE TABLE IF NOT EXISTS daily_actions (
+      character_id TEXT PRIMARY KEY,
+      trades_used INTEGER NOT NULL DEFAULT 0,
+      intel_used INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (character_id) REFERENCES characters(id)
+    );
   `);
+
+  // 기존 DB 대응: orders.order_type 컬럼 추가 (CREATE TABLE IF NOT EXISTS는 기존 테이블을 변경하지 않음).
+  const orderCols = database.prepare(`PRAGMA table_info(orders)`).all() as { name: string }[];
+  if (!orderCols.some((c) => c.name === 'order_type')) {
+    database.exec(`ALTER TABLE orders ADD COLUMN order_type TEXT NOT NULL DEFAULT 'limit'`);
+  }
 }
 
 export const SYSTEM_ACCOUNTS = {
