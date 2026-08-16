@@ -4,9 +4,10 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import express from 'express';
 import { ApiResponse } from '@stock-survival/shared';
-import { initDb, runMigrations, ensureSystemAccounts } from './db';
+import { initDb, runMigrations, ensureSystemAccounts, closeDb } from './db';
 import { bootstrapGame } from './core/bootstrap';
 import { createRouter } from './api/routes';
+import { rateLimit } from './api/rate-limit';
 import { GameWebSocketServer } from './api/ws';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
@@ -39,6 +40,7 @@ async function main(): Promise<void> {
   });
 
   app.use(express.static(path.resolve(__dirname, '../../../packages/web/public')));
+  app.use('/api', rateLimit(60_000, 120));
   app.use('/api', createRouter(ctx));
 
   app.use((_req, res) => {
@@ -74,7 +76,10 @@ async function main(): Promise<void> {
     console.log('\n[server] shutting down...');
     ctx.tickLoop.stop();
     wsServer.close();
-    server.close(() => process.exit(0));
+    server.close(() => {
+      closeDb();
+      process.exit(0);
+    });
   };
 
   process.on('SIGINT', shutdown);

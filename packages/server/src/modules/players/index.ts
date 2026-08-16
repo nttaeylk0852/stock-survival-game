@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { Character } from '@stock-survival/shared';
 import { getDb } from '../../db';
 import { AppConfig } from '../../core/config-loader';
@@ -43,6 +44,7 @@ export class PlayersModule implements GameModule {
     const characterId = uuidv4();
     const accountId = uuidv4();
     const now = Date.now();
+    const token = (randomUUID() + randomUUID()).replace(/-/g, '');
 
     const tx = db.transaction(() => {
       db.prepare(`INSERT INTO accounts (id, type, owner_id, balance) VALUES (?, 'player', ?, 0)`).run(
@@ -50,8 +52,8 @@ export class PlayersModule implements GameModule {
         characterId
       );
       db.prepare(
-        `INSERT INTO characters (id, user_account_id, account_id, name, health, last_meal_at, is_homeless, is_alive, created_at, created_total_minutes)
-         VALUES (?, ?, ?, ?, ?, ?, 1, 1, ?, ?)`
+        `INSERT INTO characters (id, user_account_id, account_id, name, health, last_meal_at, is_homeless, is_alive, created_at, created_total_minutes, auth_token)
+         VALUES (?, ?, ?, ?, ?, ?, 1, 1, ?, ?, ?)`
       ).run(
         characterId,
         userAccountId,
@@ -60,7 +62,8 @@ export class PlayersModule implements GameModule {
         this.config.survival.maxHealth,
         now,
         now,
-        this.tickLoop.getGameTime().totalMinutes
+        this.tickLoop.getGameTime().totalMinutes,
+        token
       );
     });
     tx();
@@ -172,5 +175,21 @@ export class PlayersModule implements GameModule {
     const character = this.getCharacter(characterId);
     if (!character) throw new Error('Character not found');
     return character.accountId;
+  }
+
+  /** 캐릭터 생성 직후 한 번만 클라이언트에 내려줄 비밀 토큰. */
+  getAuthToken(characterId: string): string | null {
+    const db = getDb();
+    const row = db.prepare(`SELECT auth_token FROM characters WHERE id = ?`).get(characterId) as
+      | { auth_token: string | null }
+      | undefined;
+    return row?.auth_token ?? null;
+  }
+
+  /** 토큰이 그 캐릭터의 것인지 검사. 토큰이 없거나 다르면 false. */
+  verifyAuthToken(characterId: string, token: string | undefined): boolean {
+    const stored = this.getAuthToken(characterId);
+    if (!stored) return false;
+    return typeof token === 'string' && token === stored;
   }
 }

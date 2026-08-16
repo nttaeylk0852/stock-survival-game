@@ -10,6 +10,10 @@
     "build": "npm run build --workspaces --if-present",
     "db:migrate": "npm run db:migrate --workspace=@stock-survival/server",
     "test": "npm run test --workspace=@stock-survival/server",
+    "smoke": "npm run smoke --workspace=@stock-survival/server",
     "codemap": "node scripts/generate-codemap.mjs"
+  },
+  "engines": {
+    "node": ">=20 <21"
   }
 }

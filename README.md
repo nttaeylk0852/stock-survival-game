@@ -1,6 +1,6 @@
 # Stock Survival Architecture
 
-Text-based survival stock roguelike with deep economic simulation. Mobile client (Expo) + authoritative Node.js server.
+Text-based survival stock roguelike with deep economic simulation. Browser client (vanilla JS) + authoritative Node.js server.
 
 ## Prerequisites
 
@@ -8,6 +8,8 @@ Text-based survival stock roguelike with deep economic simulation. Mobile client
 - Docker (optional, for PostgreSQL) OR use built-in SQLite for local dev
 
 ## Quick Start
+
+Requires Node 20 (see .nvmrc).
 
 ```bash
 npm install
@@ -45,6 +47,12 @@ All responses use the `ApiResponse` envelope: `{ ok, data?, error? }`.
 | POST | `/api/agendas` | Propose an agenda |
 | POST | `/api/agendas/:id/vote` | Vote weighted by shares held |
 | GET | `/api/world` | Game time, macro state, season, sector indices |
+| POST | `/api/jobs` | Take a job (`regular` / `parttime`) |
+| DELETE | `/api/jobs` | Quit the current job |
+| GET | `/api/ranking` | Live net-worth board (+ my rank) |
+| GET | `/api/institutions` | Institution seats (disabled by default) |
+
+Write endpoints require the `x-character-token` header returned by `POST /api/characters`.
 
 WebSocket messages (`WsMessage`): `world_state` (every tick), `company_prices` (every price tick), `news` (rumors, season end).
 
@@ -53,7 +61,7 @@ WebSocket messages (`WsMessage`): `world_state` (every tick), `company_prices` (
 - `config/` — balance tuning (edit JSON, not code)
 - `packages/shared/` — shared TypeScript types
 - `packages/server/` — game server
-- `packages/mobile/` — Expo app
+- `packages/web/` — browser client (static)
 - `docs/modules/` — per-module docs for AI-assisted fixes
 
 ---

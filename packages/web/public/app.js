@@ -32,11 +32,22 @@ function fmt(n) {
 }
 
 async function api(path, options = {}) {
+  const method = options.method || 'GET';
+  const headers = { 'Content-Type': 'application/json' };
+  if (method !== 'GET') {
+    headers['x-character-token'] = localStorage.getItem('characterToken') || '';
+  }
   const res = await fetch('/api' + path, {
-    method: options.method || 'GET',
-    headers: { 'Content-Type': 'application/json' },
+    method,
+    headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
+  if (res.status === 401 || res.status === 403) {
+    localStorage.removeItem('characterId');
+    localStorage.removeItem('characterToken');
+    showStartScreen();
+    throw new Error('Session expired — start a new character.');
+  }
   const json = await res.json();
   if (!json.ok) throw new Error(json.error || 'Request failed');
   return json.data;
@@ -88,6 +99,7 @@ async function handleStart() {
       body: { userId: user.userId, name: username },
     });
     localStorage.setItem('characterId', res.character.id);
+    localStorage.setItem('characterToken', res.token);
     state.characterId = res.character.id;
     hideStartScreen();
     await startGame();
@@ -230,6 +242,7 @@ async function restartGame() {
       body: { userId: user.userId, name: state.username },
     });
     localStorage.setItem('characterId', res.character.id);
+    localStorage.setItem('characterToken', res.token);
     location.reload();
   } catch (err) {
     toast(err.message);

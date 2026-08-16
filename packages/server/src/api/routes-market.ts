@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { CompanyStats, WorldState } from '@stock-survival/shared';
 import { GameContext } from './context';
-import { ok, handle } from './http';
+import { ok, handle, handleAuth } from './http';
 
 /** Attaches company / trading / survival / intel / governance / world routes. */
 export function attachMarketRoutes(router: Router, ctx: GameContext): Router {
@@ -32,60 +32,76 @@ export function attachMarketRoutes(router: Router, ctx: GameContext): Router {
   // ---------- trading ----------
   router.post(
     '/trade',
-    handle((req, res) => {
-      const { characterId, companyId, side, quantity, limitPrice, orderType } = req.body as {
-        characterId?: string;
-        companyId?: string;
-        side?: 'buy' | 'sell';
-        quantity?: number;
-        limitPrice?: number;
-        orderType?: 'limit' | 'stop';
-      };
-      if (!characterId || !companyId || !side || !quantity) {
-        throw new Error('characterId, companyId, side and quantity are required');
+    handleAuth(
+      (req) => (req.body as { characterId?: string }).characterId,
+      (id, t) => ctx.players.verifyAuthToken(id, t),
+      (req, res) => {
+        const { characterId, companyId, side, quantity, limitPrice, orderType } = req.body as {
+          characterId?: string;
+          companyId?: string;
+          side?: 'buy' | 'sell';
+          quantity?: number;
+          limitPrice?: number;
+          orderType?: 'limit' | 'stop';
+        };
+        if (!characterId || !companyId || !side || !quantity) {
+          throw new Error('characterId, companyId, side and quantity are required');
+        }
+        if (side !== 'buy' && side !== 'sell') throw new Error('side must be buy or sell');
+
+        const character = ctx.players.getCharacter(characterId);
+        if (!character || !character.isAlive) throw new Error('Character not alive');
+
+        const result = ctx.amm.trade(characterId, companyId, side, quantity, limitPrice, orderType);
+        ok(res, {
+          ...result,
+          balance: ctx.ledger.getBalance(character.accountId),
+          shares: ctx.orderBook.getPortfolioEntry(characterId, companyId).shares,
+          dailyActions: ctx.dailyActions.getState(characterId),
+        });
       }
-      if (side !== 'buy' && side !== 'sell') throw new Error('side must be buy or sell');
-
-      const character = ctx.players.getCharacter(characterId);
-      if (!character || !character.isAlive) throw new Error('Character not alive');
-
-      const result = ctx.amm.trade(characterId, companyId, side, quantity, limitPrice, orderType);
-      ok(res, {
-        ...result,
-        balance: ctx.ledger.getBalance(character.accountId),
-        shares: ctx.orderBook.getPortfolioEntry(characterId, companyId).shares,
-        dailyActions: ctx.dailyActions.getState(characterId),
-      });
-    })
+    )
   );
 
   router.delete(
     '/orders/:id',
-    handle((req, res) => {
-      const { characterId } = req.body as { characterId?: string };
-      if (!characterId) throw new Error('characterId is required');
-      ctx.orderBook.cancelOrder(req.params.id, characterId);
-      ok(res, { cancelled: true, orderId: req.params.id });
-    })
+    handleAuth(
+      (req) => (req.body as { characterId?: string }).characterId,
+      (id, t) => ctx.players.verifyAuthToken(id, t),
+      (req, res) => {
+        const { characterId } = req.body as { characterId?: string };
+        if (!characterId) throw new Error('characterId is required');
+        ctx.orderBook.cancelOrder(req.params.id, characterId);
+        ok(res, { cancelled: true, orderId: req.params.id });
+      }
+    )
   );
 
   // ---------- survival ----------
   router.post(
     '/survival/eat',
-    handle((req, res) => {
-      const { characterId } = req.body as { characterId?: string };
-      if (!characterId) throw new Error('characterId is required');
-      ok(res, ctx.survival.eat(characterId));
-    })
+    handleAuth(
+      (req) => (req.body as { characterId?: string }).characterId,
+      (id, t) => ctx.players.verifyAuthToken(id, t),
+      (req, res) => {
+        const { characterId } = req.body as { characterId?: string };
+        if (!characterId) throw new Error('characterId is required');
+        ok(res, ctx.survival.eat(characterId));
+      }
+    )
   );
 
   router.post(
     '/survival/rest',
-    handle((req, res) => {
-      const { characterId } = req.body as { characterId?: string };
-      if (!characterId) throw new Error('characterId is required');
-      ok(res, ctx.survival.rest(characterId));
-    })
+    handleAuth(
+      (req) => (req.body as { characterId?: string }).characterId,
+      (id, t) => ctx.players.verifyAuthToken(id, t),
+      (req, res) => {
+        const { characterId } = req.body as { characterId?: string };
+        if (!characterId) throw new Error('characterId is required');
+        ok(res, ctx.survival.rest(characterId));
+      }
+    )
   );
 
   return attachIntelRoutes(router, ctx);
@@ -113,11 +129,15 @@ function attachIntelRoutes(router: Router, ctx: GameContext): Router {
 
   router.post(
     '/intel/:id/purchase',
-    handle((req, res) => {
-      const { characterId } = req.body as { characterId?: string };
-      if (!characterId) throw new Error('characterId is required');
-      ok(res, ctx.intel.purchaseIntel(characterId, req.params.id));
-    })
+    handleAuth(
+      (req) => (req.body as { characterId?: string }).characterId,
+      (id, t) => ctx.players.verifyAuthToken(id, t),
+      (req, res) => {
+        const { characterId } = req.body as { characterId?: string };
+        if (!characterId) throw new Error('characterId is required');
+        ok(res, ctx.intel.purchaseIntel(characterId, req.params.id));
+      }
+    )
   );
 
   // ---------- governance ----------
@@ -130,29 +150,37 @@ function attachIntelRoutes(router: Router, ctx: GameContext): Router {
 
   router.post(
     '/agendas',
-    handle((req, res) => {
-      const { companyId, statKey, delta, deadlineMinutes } = req.body as {
-        companyId?: string;
-        statKey?: keyof CompanyStats;
-        delta?: number;
-        deadlineMinutes?: number;
-      };
-      if (!companyId || !statKey || delta === undefined) {
-        throw new Error('companyId, statKey and delta are required');
+    handleAuth(
+      (req) => (req.body as { characterId?: string }).characterId,
+      (id, t) => ctx.players.verifyAuthToken(id, t),
+      (req, res) => {
+        const { companyId, statKey, delta, deadlineMinutes } = req.body as {
+          companyId?: string;
+          statKey?: keyof CompanyStats;
+          delta?: number;
+          deadlineMinutes?: number;
+        };
+        if (!companyId || !statKey || delta === undefined) {
+          throw new Error('companyId, statKey and delta are required');
+        }
+        ok(res, ctx.governance.createAgenda(companyId, statKey, delta, deadlineMinutes ?? 60));
       }
-      ok(res, ctx.governance.createAgenda(companyId, statKey, delta, deadlineMinutes ?? 60));
-    })
+    )
   );
 
   router.post(
     '/agendas/:id/vote',
-    handle((req, res) => {
-      const { characterId, vote } = req.body as { characterId?: string; vote?: 'for' | 'against' };
-      if (!characterId || !vote) throw new Error('characterId and vote are required');
-      if (vote !== 'for' && vote !== 'against') throw new Error('vote must be for or against');
-      ctx.governance.vote(req.params.id, characterId, vote);
-      ok(res, ctx.governance.getAgenda(req.params.id));
-    })
+    handleAuth(
+      (req) => (req.body as { characterId?: string }).characterId,
+      (id, t) => ctx.players.verifyAuthToken(id, t),
+      (req, res) => {
+        const { characterId, vote } = req.body as { characterId?: string; vote?: 'for' | 'against' };
+        if (!characterId || !vote) throw new Error('characterId and vote are required');
+        if (vote !== 'for' && vote !== 'against') throw new Error('vote must be for or against');
+        ctx.governance.vote(req.params.id, characterId, vote);
+        ok(res, ctx.governance.getAgenda(req.params.id));
+      }
+    )
   );
 
   // ---------- institutions ----------

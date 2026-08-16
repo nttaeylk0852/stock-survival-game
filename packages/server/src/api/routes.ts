@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { GameContext } from './context';
-import { ok, handle } from './http';
+import { ok, handle, handleAuth } from './http';
 import { attachMarketRoutes } from './routes-market';
 
 export function createRouter(ctx: GameContext): Router {
@@ -30,7 +30,11 @@ export function createRouter(ctx: GameContext): Router {
       if (!userId || !name) throw new Error('userId and name are required');
 
       const character = ctx.players.createCharacter(userId, name);
-      ok(res, { character, balance: ctx.ledger.getBalance(character.accountId) });
+      ok(res, {
+        character,
+        token: ctx.players.getAuthToken(character.id),
+        balance: ctx.ledger.getBalance(character.accountId),
+      });
     })
   );
 
@@ -84,23 +88,31 @@ export function createRouter(ctx: GameContext): Router {
   // ---------- jobs ----------
   router.post(
     '/jobs',
-    handle((req, res) => {
-      const { characterId, kind } = req.body as { characterId?: string; kind?: 'regular' | 'parttime' };
-      if (!characterId || !kind) throw new Error('characterId and kind are required');
-      if (kind !== 'regular' && kind !== 'parttime') throw new Error('kind must be regular or parttime');
-      const job = ctx.jobs.takeJob(characterId, kind, ctx.tickLoop.getGameTime().totalMinutes);
-      ok(res, { job });
-    })
+    handleAuth(
+      (req) => (req.body as { characterId?: string }).characterId,
+      (id, t) => ctx.players.verifyAuthToken(id, t),
+      (req, res) => {
+        const { characterId, kind } = req.body as { characterId?: string; kind?: 'regular' | 'parttime' };
+        if (!characterId || !kind) throw new Error('characterId and kind are required');
+        if (kind !== 'regular' && kind !== 'parttime') throw new Error('kind must be regular or parttime');
+        const job = ctx.jobs.takeJob(characterId, kind, ctx.tickLoop.getGameTime().totalMinutes);
+        ok(res, { job });
+      }
+    )
   );
 
   router.delete(
     '/jobs',
-    handle((req, res) => {
-      const { characterId } = req.body as { characterId?: string };
-      if (!characterId) throw new Error('characterId is required');
-      ctx.jobs.quitJob(characterId);
-      ok(res, { quit: true });
-    })
+    handleAuth(
+      (req) => (req.body as { characterId?: string }).characterId,
+      (id, t) => ctx.players.verifyAuthToken(id, t),
+      (req, res) => {
+        const { characterId } = req.body as { characterId?: string };
+        if (!characterId) throw new Error('characterId is required');
+        ctx.jobs.quitJob(characterId);
+        ok(res, { quit: true });
+      }
+    )
   );
 
   // ---------- ranking ----------

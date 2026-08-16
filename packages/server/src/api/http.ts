@@ -26,3 +26,29 @@ export function handle(fn: (req: Request, res: Response) => void) {
     }
   };
 }
+
+/** 토큰을 확인한 뒤 핸들러를 부른다. 실패 시 401/403. */
+export function handleAuth(
+  getCharacterId: (req: Request) => string | undefined,
+  verify: (characterId: string, token: string | undefined) => boolean,
+  fn: (req: Request, res: Response) => void
+) {
+  return (req: Request, res: Response): void => {
+    try {
+      const characterId = getCharacterId(req);
+      if (!characterId) throw new Error('characterId is required');
+      const token = req.header('x-character-token') ?? undefined;
+      if (!token) {
+        fail(res, new Error('Missing character token'), 401);
+        return;
+      }
+      if (!verify(characterId, token)) {
+        fail(res, new Error('Character token mismatch'), 403);
+        return;
+      }
+      fn(req, res);
+    } catch (err) {
+      fail(res, err);
+    }
+  };
+}

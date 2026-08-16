@@ -1,4 +1,4 @@
-import { initDb, runMigrations, ensureSystemAccounts, getDb, SYSTEM_ACCOUNTS } from '../db';
+import { initDb, runMigrations, ensureSystemAccounts, getDb, SYSTEM_ACCOUNTS, closeDb } from '../db';
 import { bootstrapGame } from '../core/bootstrap';
 import { GameContext } from '../api/context';
 import { assert, assertEqual, assertClose, assertThrows, test, summarize } from './harness';
@@ -835,6 +835,43 @@ async function runDeathTests(ctx: GameContext): Promise<void> {
   });
 }
 
+async function runAuthTests(ctx: GameContext, companyId: string): Promise<void> {
+  await test('new character has an auth token', () => {
+    const character = newCharacter(ctx, 'AuthToken');
+    const token = ctx.players.getAuthToken(character.id);
+    assert(typeof token === 'string' && token.length >= 20, 'auth token should be a 20+ char string');
+  });
+
+  await test('correct token verifies', () => {
+    const character = newCharacter(ctx, 'AuthVerify');
+    const token = ctx.players.getAuthToken(character.id)!;
+    assert(ctx.players.verifyAuthToken(character.id, token) === true, 'correct token should verify');
+  });
+
+  await test('wrong token is rejected', () => {
+    const character = newCharacter(ctx, 'AuthWrong');
+    assert(ctx.players.verifyAuthToken(character.id, 'nope') === false, 'wrong token should be rejected');
+  });
+
+  await test('missing token is rejected', () => {
+    const character = newCharacter(ctx, 'AuthMissing');
+    assert(
+      ctx.players.verifyAuthToken(character.id, undefined) === false,
+      'missing token should be rejected'
+    );
+  });
+
+  await test('other character token is rejected', () => {
+    const a = newCharacter(ctx, 'AuthA');
+    const b = newCharacter(ctx, 'AuthB');
+    const tokenA = ctx.players.getAuthToken(a.id)!;
+    assert(
+      ctx.players.verifyAuthToken(b.id, tokenA) === false,
+      'another character token should be rejected'
+    );
+  });
+}
+
 async function main(): Promise<void> {
   console.log('Stock Survival — server test suite\n');
   const ctx = await setup();
@@ -927,6 +964,7 @@ async function main(): Promise<void> {
   await runRankingTests(ctx, companyId);
   await runTimeDesignTests(ctx, companyId);
   await runInstitutionTests(ctx, companyId);
+  await runAuthTests(ctx, companyId);
   await runDeathTests(ctx);
   await runSeasonTests(ctx);
 
@@ -937,7 +975,9 @@ async function main(): Promise<void> {
     assertEqual(recent[0].title, '테스트 헤드라인', 'latest news should come first');
   });
 
-  process.exit(summarize());
+  const code = summarize();
+  closeDb();
+  process.exitCode = code;
 }
 
 async function runSurvivalTests(ctx: GameContext): Promise<void> {
@@ -1180,6 +1220,7 @@ async function runImageAxisTests(ctx: GameContext, companyId: string): Promise<v
 
 main().catch((err) => {
   console.error('test runner crashed:', err);
-  process.exit(1);
+  closeDb();
+  process.exitCode = 1;
 });
 

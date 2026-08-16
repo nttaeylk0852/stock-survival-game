@@ -66,6 +66,7 @@ export function runMigrations(): void {
       death_cause TEXT,
       created_total_minutes INTEGER NOT NULL DEFAULT 0,
       peak_net_worth REAL NOT NULL DEFAULT 0,
+      auth_token TEXT,
       FOREIGN KEY (user_account_id) REFERENCES user_accounts(id),
       FOREIGN KEY (account_id) REFERENCES accounts(id)
     );
@@ -219,6 +220,9 @@ export function runMigrations(): void {
   if (!charCols.some((c) => c.name === 'peak_net_worth')) {
     database.exec(`ALTER TABLE characters ADD COLUMN peak_net_worth REAL NOT NULL DEFAULT 0`);
   }
+  if (!charCols.some((c) => c.name === 'auth_token')) {
+    database.exec(`ALTER TABLE characters ADD COLUMN auth_token TEXT`);
+  }
 }
 
 export const SYSTEM_ACCOUNTS = {
@@ -234,4 +238,12 @@ export function ensureSystemAccounts(): void {
   `);
   insert.run(SYSTEM_ACCOUNTS.CENTRAL_BANK, 'central_bank');
   insert.run(SYSTEM_ACCOUNTS.TREASURY, 'treasury');
+}
+
+/** 테스트·종료 시 statement finalize를 GC에 맡기지 않고 명시적으로 닫는다. */
+export function closeDb(): void {
+  if (db) {
+    db.close();
+    db = null;
+  }
 }
