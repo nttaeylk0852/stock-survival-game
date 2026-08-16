@@ -36,6 +36,9 @@ export class OrderBookModule implements GameModule {
     if (this.circuitBreaker.isHalted()) throw new Error('Trading halted by circuit breaker');
     if (!this.marketSession.isMarketOpen()) throw new Error('Market closed');
     if (quantity <= 0 || price <= 0) throw new Error('Invalid order');
+    if (type === 'stop' && side !== 'sell') {
+      throw new Error('Stop-loss is sell only');
+    }
     const company = this.companies.getCompany(companyId);
     if (!company || company.status !== 'ACTIVE') throw new Error('Company not tradable');
 
@@ -192,6 +195,17 @@ export class OrderBookModule implements GameModule {
     return rows;
   }
 
+  getNetWorth(characterId: string): number {
+    const accountId = this.players.getAccountId(characterId);
+    const cash = this.ledger.getBalance(accountId);
+    let stock = 0;
+    for (const e of this.getPortfolio(characterId)) {
+      const company = this.companies.getCompany(e.companyId);
+      stock += e.shares * (company?.currentPrice ?? 0);
+    }
+    return cash + stock;
+  }
+
   getOrder(orderId: string): Order | null {
     const db = getDb();
     const row = db.prepare(`SELECT * FROM orders WHERE id = ?`).get(orderId) as
@@ -218,6 +232,26 @@ export class OrderBookModule implements GameModule {
         `SELECT * FROM orders WHERE company_id = ? AND status = 'open' ORDER BY created_at DESC`
       )
       .all(companyId) as Record<string, unknown>[];
+    return rows.map((row) => ({
+      id: row.id as string,
+      characterId: row.character_id as string,
+      companyId: row.company_id as string,
+      side: row.side as 'buy' | 'sell',
+      type: (row.order_type as Order['type']) ?? 'limit',
+      price: row.price as number,
+      quantity: row.quantity as number,
+      status: row.status as Order['status'],
+      createdAt: row.created_at as number,
+    }));
+  }
+
+  getOpenOrdersForCharacter(characterId: string): Order[] {
+    const db = getDb();
+    const rows = db
+      .prepare(
+        `SELECT * FROM orders WHERE character_id = ? AND status = 'open' ORDER BY created_at DESC`
+      )
+      .all(characterId) as Record<string, unknown>[];
     return rows.map((row) => ({
       id: row.id as string,
       characterId: row.character_id as string,

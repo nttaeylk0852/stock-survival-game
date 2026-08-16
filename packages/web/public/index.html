@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Stock Survival</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    .status-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 1.25rem;
+      margin-top: 0.5rem;
+      font-size: 0.85rem;
+      color: var(--muted, #9aa4b2);
+    }
+    .status-bar strong { color: var(--text, #e6edf3); font-weight: 600; }
+
+    .start-screen {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 1.5rem;
+      box-sizing: border-box;
+    }
+    .start-card {
+      max-width: 26rem;
+      width: 100%;
+      padding: 2rem;
+      border: 1px solid var(--border, #2d333b);
+      border-radius: 12px;
+      background: var(--card, #161b22);
+      text-align: center;
+    }
+    .start-card h1 { margin: 0 0 1rem; font-size: 1.6rem; }
+    .start-card p { margin: 0.4rem 0; color: var(--muted, #9aa4b2); line-height: 1.5; }
+    .start-card .start-tagline { font-style: italic; }
+    .start-card input {
+      width: 100%;
+      box-sizing: border-box;
+      margin: 1.25rem 0 0.75rem;
+      padding: 0.6rem 0.75rem;
+      border: 1px solid var(--border, #2d333b);
+      border-radius: 6px;
+      background: var(--input, #0d1117);
+      color: var(--text, #e6edf3);
+      font-size: 1rem;
+    }
+    .start-card button {
+      width: 100%;
+      padding: 0.6rem;
+      border: none;
+      border-radius: 6px;
+      background: var(--accent, #2f81f7);
+      color: #fff;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+    .start-card button:hover { filter: brightness(1.1); }
+
+    .tab-hint {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
+      padding: 0.5rem 0.75rem;
+      border: 1px solid var(--border, #2d333b);
+      border-radius: 6px;
+      background: var(--hint, #1c2330);
+      color: var(--muted, #9aa4b2);
+      font-size: 0.85rem;
+    }
+    .hint-close {
+      border: none;
+      background: transparent;
+      color: var(--muted, #9aa4b2);
+      font-size: 1rem;
+      line-height: 1;
+      cursor: pointer;
+      padding: 0 0.25rem;
+    }
+    .hint-close:hover { color: var(--text, #e6edf3); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Stock Survival</h1>
+    <p class="onboarding">Rates up → food costs up → set a stop-loss.</p>
+    <div id="status-bar" class="status-bar"></div>
+  </header>
+
+  <div id="start-screen" class="start-screen" style="display:none">
+    <div class="start-card">
+      <h1>Stock Survival</h1>
+      <p>You have rent, hunger, and a market that does not care.</p>
+      <p>News moves rates. Rates move prices. Prices move your dinner.</p>
+      <p class="start-tagline">Set a stop-loss before you log off.</p>
+      <input id="start-nickname" type="text" placeholder="Nickname" maxlength="24" autocomplete="off" />
+      <button id="btn-start" type="button">Start</button>
+    </div>
+  </div>
+
+  <nav class="tabs">
+    <button data-tab="quotes" class="tab active">Market</button>
+    <button data-tab="news" class="tab">News</button>
+    <button data-tab="survival" class="tab">Survival</button>
+    <button data-tab="orders" class="tab">Orders</button>
+    <button data-tab="ranking" class="tab">Ranking</button>
+  </nav>
+
+  <main>
+    <section id="tab-quotes" class="tab-panel active"></section>
+    <section id="tab-news" class="tab-panel"></section>
+    <section id="tab-survival" class="tab-panel"></section>
+    <section id="tab-orders" class="tab-panel"></section>
+    <section id="tab-ranking" class="tab-panel"></section>
+  </main>
+
+  <div id="toast" class="toast"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

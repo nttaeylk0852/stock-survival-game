@@ -23,6 +23,7 @@ interface NewsBroadcast {
   title: string;
   body: string;
   companyId: string | null;
+  createdAt: number;
 }
 
 interface PendingChainStep {
@@ -36,6 +37,7 @@ export class IntelModule implements GameModule {
   private rumorListeners: ((item: IntelItem) => void)[] = [];
   private newsListeners: ((news: NewsBroadcast) => void)[] = [];
   private pendingChain: PendingChainStep[] = [];
+  private recentNews: NewsBroadcast[] = [];
 
   constructor(
     private config: AppConfig,
@@ -62,9 +64,19 @@ export class IntelModule implements GameModule {
   }
 
   broadcastNews(title: string, body: string, companyId: string | null = null): void {
-    for (const listener of this.newsListeners) {
-      listener({ title, body, companyId });
+    const news: NewsBroadcast = { title, body, companyId, createdAt: Date.now() };
+    this.recentNews.push(news);
+    if (this.recentNews.length > 50) {
+      this.recentNews = this.recentNews.slice(this.recentNews.length - 50);
     }
+    for (const listener of this.newsListeners) {
+      listener(news);
+    }
+  }
+
+  /** 최근 뉴스 50개 (최신순). 루머 구매 목록과 분리. isFake 없음. */
+  getRecentNews(): { title: string; body: string; companyId: string | null; createdAt: number }[] {
+    return this.recentNews.slice().reverse();
   }
 
   generateRumor(companyId: string | null): IntelItem {
@@ -210,7 +222,7 @@ export class IntelModule implements GameModule {
     for (const step of ready) {
       const ctx = this.buildContextFromEffects(step.effects);
       this.broadcastNews(
-        renderHeadline(step.headline ?? '[속보] 연쇄 반응', ctx),
+        renderHeadline(step.headline ?? '[Breaking] Chain reaction', ctx),
         '[chain]',
         null
       );
@@ -278,7 +290,7 @@ export class IntelModule implements GameModule {
       (Object.keys(this.config.commodities)[0] ?? 'commodity');
     const active = this.companies.getAllCompanies().filter((c) => c.status === 'ACTIVE');
     const company =
-      active.length > 0 ? active[Math.floor(Math.random() * active.length)].name : '시장';
+      active.length > 0 ? active[Math.floor(Math.random() * active.length)].name : 'market';
     const deltas = Object.values(effects).map((d) => Math.abs(d));
     const maxDelta = deltas.length > 0 ? Math.max(...deltas) : 0;
     return {

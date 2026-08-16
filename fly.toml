@@ -1,0 +1,23 @@
+app = "stock-survival"
+primary_region = "nrt"
+
+[env]
+  PORT = "3000"
+  DB_PATH = "/data/game.db"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    timeout = "5s"
+    method = "GET"
+    path = "/health"
+
+[[mounts]]
+  source = "game_data"
+  destination = "/data"

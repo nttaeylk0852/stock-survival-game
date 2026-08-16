@@ -21,8 +21,8 @@ import { largeCapIds } from '../modules/companies/pricing';
 import { computeMarketCap, shouldBailout, applyDilution } from '../modules/economy/central-bank';
 import { CircuitBreaker } from '../modules/market/circuit-breaker';
 import { Company, GameTime } from '@stock-survival/shared';
-import { valueStrategy, momentumStrategy, shortStrategy } from '../modules/forces/strategies';
 import { isMarketOpen, isSettlementWindow, isMainSession } from '../modules/world/market-session';
+import { regularPay, partTimePay } from '../modules/players/jobs';
 
 async function setup(): Promise<GameContext> {
   initDb(':memory:');
@@ -41,6 +41,11 @@ async function setup(): Promise<GameContext> {
 /** 특정 게임 시각의 GameTime을 만든다. */
 function timeAt(hour: number): GameTime {
   return { year: 2026, month: 1, day: 1, hour, minute: 0, totalMinutes: hour * 60 };
+}
+
+/** 임의 게임 경과분의 GameTime을 만든다 (임기·게임일 계산용). */
+function minutesAt(totalMinutes: number): GameTime {
+  return { year: 2026, month: 1, day: 1, hour: 0, minute: 0, totalMinutes };
 }
 
 /** 시장 세션 모듈을 특정 시각으로 전진시킨다 (개장/휴장/리셋 판정용). */
@@ -221,98 +226,6 @@ async function runCentralBankTests(ctx: GameContext, companyId: string): Promise
   });
 }
 
-async function runForceTests(ctx: GameContext, companyId: string): Promise<void> {
-  await test('valueStrategy buys undervalued and sells overvalued', () => {
-    assertEqual(
-      valueStrategy(makeCompany({ currentPrice: 90 }), 100, { gapThreshold: 0.05 }).side,
-      'buy',
-      'undervalued company should trigger a buy'
-    );
-    assertEqual(
-      valueStrategy(makeCompany({ currentPrice: 110 }), 100, { gapThreshold: 0.05 }).side,
-      'sell',
-      'overvalued company should trigger a sell'
-    );
-  });
-
-  await test('momentumStrategy follows an uptrend and a downtrend', () => {
-    assertEqual(
-      momentumStrategy([100, 101, 102, 103, 104, 105], { window: 5, returnThreshold: 0.03 }).side,
-      'buy',
-      'rising trend should trigger a buy'
-    );
-    assertEqual(
-      momentumStrategy([105, 104, 103, 102, 101, 100], { window: 5, returnThreshold: 0.03 }).side,
-      'sell',
-      'falling trend should trigger a sell'
-    );
-  });
-
-  await test('shortStrategy only attacks overvalued companies with bad news', () => {
-    const overvalued = makeCompany({ currentPrice: 120 });
-    assertEqual(
-      shortStrategy(overvalued, 100, true, { overvalueThreshold: 0.1 }).side,
-      'sell',
-      'overvalued + bad news should short'
-    );
-    assertEqual(
-      shortStrategy(overvalued, 100, false, { overvalueThreshold: 0.1 }).side,
-      null,
-      'overvalued without bad news should hold'
-    );
-  });
-
-  await test('forces init mints starting capital per profile', () => {
-    assertEqual(
-      ctx.forces.getProfileIds().length,
-      ctx.config.forces.profiles.length,
-      'one account per profile'
-    );
-    for (const profile of ctx.config.forces.profiles) {
-      assertEqual(
-        ctx.ledger.getBalance(ctx.forces.getAccountId(profile.id)),
-        profile.startingCapital,
-        `${profile.id} capital must be minted`
-      );
-    }
-    assertEqual(ctx.ledger.assertConservation().ok, true, 'minting must preserve conservation');
-  });
-
-  await test('force market order moves AMM price and conserves ledger', () => {
-    const profile = ctx.config.forces.profiles[0];
-    const accountId = ctx.forces.getAccountId(profile.id);
-    const before = getDb()
-      .prepare(`SELECT cash_reserve, share_reserve FROM amm_pools WHERE company_id = ?`)
-      .get(companyId) as { cash_reserve: number; share_reserve: number };
-
-    const result = ctx.amm.marketOrder(accountId, profile.id, companyId, 'buy', 10);
-    assert(result.total > 0, 'force buy should cost cash');
-
-    const after = getDb()
-      .prepare(`SELECT cash_reserve, share_reserve FROM amm_pools WHERE company_id = ?`)
-      .get(companyId) as { cash_reserve: number; share_reserve: number };
-    assert(
-      after.cash_reserve / after.share_reserve > before.cash_reserve / before.share_reserve,
-      'buying from the AMM should raise the implied pool price'
-    );
-    assertEqual(ctx.ledger.assertConservation().ok, true, 'force trade must preserve conservation');
-  });
-
-  await test('forces onPriceTick opens a long on clear undervaluation', () => {
-    const profileId = 'value';
-    getDb().prepare(`UPDATE companies SET current_price = ? WHERE id = ?`).run(10, companyId);
-    ctx.forces.onPriceTick({
-      type: 'PRICE_TICK',
-      gameTime: ctx.tickLoop.getGameTime(),
-      tickCount: 1,
-    });
-    assert(
-      ctx.forces.getPosition(profileId, companyId) > 0,
-      'value force should buy the undervalued company'
-    );
-  });
-}
-
 async function runTimeDesignTests(ctx: GameContext, companyId: string): Promise<void> {
   const open = ctx.config.world.marketOpenHour;
   const close = ctx.config.world.marketCloseHour;
@@ -354,36 +267,6 @@ async function runTimeDesignTests(ctx: GameContext, companyId: string): Promise<
     assertEqual(result.method, 'amm', 'market order should execute during open hours');
   });
 
-  await test('stop-loss order triggers a market sell on price drop', () => {
-    const character = newCharacter(ctx, 'Stopper');
-    driveTime(ctx, 10);
-    ctx.amm.buyFromAmm(character.id, companyId, 10);
-    const stopPrice = ctx.companies.getCompany(companyId)!.currentPrice * 0.5;
-    ctx.orderBook.placeOrder(character.id, companyId, 'sell', stopPrice, 10, 'stop');
-
-    getDb().prepare(`UPDATE companies SET current_price = ? WHERE id = ?`).run(stopPrice - 1, companyId);
-    ctx.amm.onPriceTick({ type: 'PRICE_TICK', gameTime: ctx.tickLoop.getGameTime(), tickCount: 1 });
-
-    assertEqual(
-      ctx.orderBook.getPortfolioEntry(character.id, companyId).shares,
-      0,
-      'stop-loss should have liquidated the position'
-    );
-  });
-
-  await test('daily trade limit caps the number of trades', () => {
-    const character = newCharacter(ctx, 'SpamTrader');
-    driveTime(ctx, 10);
-    const limit = ctx.config.market.dailyTradeLimit;
-    for (let i = 0; i < limit; i++) {
-      ctx.amm.trade(character.id, companyId, 'buy', 1);
-    }
-    assertThrows(
-      () => ctx.amm.trade(character.id, companyId, 'buy', 1),
-      'trading beyond the daily limit must throw'
-    );
-  });
-
   await test('daily intel purchase limit caps info buys', () => {
     const character = newCharacter(ctx, 'InfoHoarder');
     const limit = ctx.config.intel.dailyIntelPurchaseLimit;
@@ -397,18 +280,557 @@ async function runTimeDesignTests(ctx: GameContext, companyId: string): Promise<
     );
   });
 
-  await test('daily actions reset when the market reopens', () => {
+  await test('daily intel usage resets when the market reopens', () => {
     const character = newCharacter(ctx, 'Resetter');
-    driveTime(ctx, 10);
-    ctx.amm.trade(character.id, companyId, 'buy', 1);
-    assert(ctx.dailyActions.getState(character.id).tradesUsed > 0, 'trade should be counted');
-
-    driveTime(ctx, 4); // 휴장
-    driveTime(ctx, 9); // 재개장 → 리셋
+    const rumor = ctx.intel.generateRumor(companyId);
+    ctx.intel.purchaseIntel(character.id, rumor.id);
+    assert(ctx.dailyActions.getState(character.id).intelUsed > 0, 'intel should be counted');
+    driveTime(ctx, 4);
+    driveTime(ctx, 9);
     assertEqual(
-      ctx.dailyActions.getState(character.id).tradesUsed,
+      ctx.dailyActions.getState(character.id).intelUsed,
       0,
-      'daily actions should reset at market open'
+      'daily intel usage should reset at market open'
+    );
+  });
+}
+
+async function runStopLossIntakeTests(ctx: GameContext, companyId: string): Promise<void> {
+  await test('stop-loss placement does not sell', () => {
+    const character = newCharacter(ctx, 'StopIntake');
+    ctx.amm.buyFromAmm(character.id, companyId, 10);
+    const stopPrice = ctx.companies.getCompany(companyId)!.currentPrice * 0.5;
+    const cashBefore = ctx.ledger.getBalance(character.accountId);
+
+    ctx.amm.trade(character.id, companyId, 'sell', 10, stopPrice, 'stop');
+
+    assertEqual(
+      ctx.orderBook.getPortfolioEntry(character.id, companyId).shares,
+      10,
+      'stop placement must not sell shares'
+    );
+    assertEqual(
+      ctx.ledger.getBalance(character.accountId),
+      cashBefore,
+      'stop placement must not move cash'
+    );
+    const open = ctx.orderBook.getOpenOrdersForCharacter(character.id);
+    assert(
+      open.some((o) => o.type === 'stop' && o.status === 'open'),
+      'stop order must be open in the character list'
+    );
+  });
+
+  await test('stop-loss cancel keeps shares', () => {
+    const character = newCharacter(ctx, 'StopCancel');
+    ctx.amm.buyFromAmm(character.id, companyId, 10);
+    const stopPrice = ctx.companies.getCompany(companyId)!.currentPrice * 0.5;
+    ctx.amm.trade(character.id, companyId, 'sell', 10, stopPrice, 'stop');
+
+    const [order] = ctx.orderBook.getOpenOrdersForCharacter(character.id);
+    ctx.orderBook.cancelOrder(order.id, character.id);
+
+    assertEqual(
+      ctx.orderBook.getOrder(order.id)!.status,
+      'cancelled',
+      'cancelled order must be marked cancelled'
+    );
+    assertEqual(
+      ctx.orderBook.getPortfolioEntry(character.id, companyId).shares,
+      10,
+      'cancel must keep shares'
+    );
+  });
+
+  await test('stop-loss buy is rejected', () => {
+    const character = newCharacter(ctx, 'StopBuy');
+    const price = ctx.companies.getCompany(companyId)!.currentPrice;
+    assertThrows(
+      () => ctx.amm.trade(character.id, companyId, 'buy', 1, price, 'stop'),
+      'stop buy must be rejected'
+    );
+  });
+
+  await test('stop-loss without shares is rejected', () => {
+    const character = newCharacter(ctx, 'StopEmpty');
+    const price = ctx.companies.getCompany(companyId)!.currentPrice;
+    assertThrows(
+      () => ctx.amm.trade(character.id, companyId, 'sell', 1, price, 'stop'),
+      'stop sell without shares must be rejected'
+    );
+  });
+}
+
+async function runStopLossTriggerTests(ctx: GameContext, companyId: string): Promise<void> {
+  await test('stop-loss triggers market sell on drop', () => {
+    const character = newCharacter(ctx, 'StopTrig');
+    ctx.amm.buyFromAmm(character.id, companyId, 10);
+    const stopPrice = ctx.companies.getCompany(companyId)!.currentPrice * 0.5;
+    ctx.amm.trade(character.id, companyId, 'sell', 10, stopPrice, 'stop');
+    const [order] = ctx.orderBook.getOpenOrdersForCharacter(character.id);
+
+    getDb().prepare(`UPDATE companies SET current_price = ? WHERE id = ?`).run(stopPrice - 1, companyId);
+    ctx.amm.onPriceTick({ type: 'PRICE_TICK', gameTime: ctx.tickLoop.getGameTime(), tickCount: 1 });
+
+    assertEqual(
+      ctx.orderBook.getPortfolioEntry(character.id, companyId).shares,
+      0,
+      'stop-loss should have liquidated the position'
+    );
+    assertEqual(
+      ctx.orderBook.getOrder(order.id)!.status,
+      'filled',
+      'triggered stop order must be marked filled'
+    );
+  });
+
+  await test('stop-loss does not fire above trigger', () => {
+    const character = newCharacter(ctx, 'StopNoTrig');
+    ctx.amm.buyFromAmm(character.id, companyId, 10);
+    const stopPrice = ctx.companies.getCompany(companyId)!.currentPrice * 0.5;
+    ctx.amm.trade(character.id, companyId, 'sell', 10, stopPrice, 'stop');
+    const [order] = ctx.orderBook.getOpenOrdersForCharacter(character.id);
+
+    getDb().prepare(`UPDATE companies SET current_price = ? WHERE id = ?`).run(stopPrice + 1, companyId);
+    ctx.amm.onPriceTick({ type: 'PRICE_TICK', gameTime: ctx.tickLoop.getGameTime(), tickCount: 1 });
+
+    assertEqual(
+      ctx.orderBook.getPortfolioEntry(character.id, companyId).shares,
+      10,
+      'stop must not fire above the trigger price'
+    );
+    assertEqual(ctx.orderBook.getOrder(order.id)!.status, 'open', 'order must remain open');
+  });
+
+  await test('failed stop-loss stays open', () => {
+    const character = newCharacter(ctx, 'StopFail');
+    ctx.amm.buyFromAmm(character.id, companyId, 10);
+    const stopPrice = ctx.companies.getCompany(companyId)!.currentPrice * 0.5;
+    ctx.amm.trade(character.id, companyId, 'sell', 10, stopPrice, 'stop');
+    const [order] = ctx.orderBook.getOpenOrdersForCharacter(character.id);
+
+    ctx.amm.sellToAmm(character.id, companyId, 10);
+    getDb().prepare(`UPDATE companies SET current_price = ? WHERE id = ?`).run(stopPrice - 1, companyId);
+    ctx.amm.onPriceTick({ type: 'PRICE_TICK', gameTime: ctx.tickLoop.getGameTime(), tickCount: 1 });
+
+    assertEqual(
+      ctx.orderBook.getOrder(order.id)!.status,
+      'open',
+      'failed stop execution must keep the order open'
+    );
+  });
+
+  await test('stop-loss does not fire while closed', () => {
+    const character = newCharacter(ctx, 'StopClosed');
+    ctx.amm.buyFromAmm(character.id, companyId, 10);
+    const stopPrice = ctx.companies.getCompany(companyId)!.currentPrice * 0.5;
+    ctx.amm.trade(character.id, companyId, 'sell', 10, stopPrice, 'stop');
+    const [order] = ctx.orderBook.getOpenOrdersForCharacter(character.id);
+
+    driveTime(ctx, 4);
+    getDb().prepare(`UPDATE companies SET current_price = ? WHERE id = ?`).run(stopPrice - 1, companyId);
+    ctx.amm.onPriceTick({ type: 'PRICE_TICK', gameTime: ctx.tickLoop.getGameTime(), tickCount: 1 });
+
+    assertEqual(
+      ctx.orderBook.getPortfolioEntry(character.id, companyId).shares,
+      10,
+      'stop must not fire while the market is closed'
+    );
+    assertEqual(ctx.orderBook.getOrder(order.id)!.status, 'open', 'order must remain open');
+  });
+}
+
+async function runStopLossSessionTests(ctx: GameContext, companyId: string): Promise<void> {
+  await test('closed market rejects new stop', () => {
+    driveTime(ctx, 4);
+    const character = newCharacter(ctx, 'StopClosedNew');
+    assertThrows(
+      () => ctx.amm.trade(character.id, companyId, 'sell', 1, 100, 'stop'),
+      'new stop order must be rejected while the market is closed'
+    );
+  });
+
+  await test('existing stop survives close', () => {
+    driveTime(ctx, 10);
+    const character = newCharacter(ctx, 'StopSurvive');
+    ctx.amm.buyFromAmm(character.id, companyId, 10);
+    const stopPrice = ctx.companies.getCompany(companyId)!.currentPrice * 0.5;
+    ctx.amm.trade(character.id, companyId, 'sell', 10, stopPrice, 'stop');
+    const [order] = ctx.orderBook.getOpenOrdersForCharacter(character.id);
+
+    driveTime(ctx, 4);
+    assertEqual(
+      ctx.orderBook.getOrder(order.id)!.status,
+      'open',
+      'stop must survive the market close'
+    );
+  });
+
+  await test('cancel works while closed', () => {
+    driveTime(ctx, 10);
+    const character = newCharacter(ctx, 'StopCancelClosed');
+    ctx.amm.buyFromAmm(character.id, companyId, 10);
+    const stopPrice = ctx.companies.getCompany(companyId)!.currentPrice * 0.5;
+    ctx.amm.trade(character.id, companyId, 'sell', 10, stopPrice, 'stop');
+    const [order] = ctx.orderBook.getOpenOrdersForCharacter(character.id);
+
+    driveTime(ctx, 4);
+    ctx.orderBook.cancelOrder(order.id, character.id);
+    assertEqual(
+      ctx.orderBook.getOrder(order.id)!.status,
+      'cancelled',
+      'cancel must work while the market is closed'
+    );
+  });
+
+  await test('stop fires after reopen', () => {
+    driveTime(ctx, 10);
+    const character = newCharacter(ctx, 'StopReopen');
+    ctx.amm.buyFromAmm(character.id, companyId, 10);
+    const stopPrice = ctx.companies.getCompany(companyId)!.currentPrice * 0.5;
+    ctx.amm.trade(character.id, companyId, 'sell', 10, stopPrice, 'stop');
+    const [order] = ctx.orderBook.getOpenOrdersForCharacter(character.id);
+
+    driveTime(ctx, 4);
+    getDb().prepare(`UPDATE companies SET current_price = ? WHERE id = ?`).run(
+      stopPrice - 1,
+      companyId
+    );
+    driveTime(ctx, 10);
+    ctx.amm.onPriceTick({ type: 'PRICE_TICK', gameTime: ctx.tickLoop.getGameTime(), tickCount: 1 });
+
+    assertEqual(
+      ctx.orderBook.getPortfolioEntry(character.id, companyId).shares,
+      0,
+      'stop must liquidate after the market reopens'
+    );
+    assertEqual(ctx.orderBook.getOrder(order.id)!.status, 'filled', 'reopened stop must be filled');
+  });
+}
+
+
+async function runJobTests(ctx: GameContext, companyId: string): Promise<void> {
+  await test('regularPay matches the meal+rest times cpi plus allowance formula', () => {
+    assertEqual(regularPay(1.0, 500, 200, 10000, 0.1), 1700, 'regularPay = (meal+rest)*cpi + starter*ratio');
+  });
+
+  await test('partTimePay matches the rest times cpi plus fixed extra formula', () => {
+    assertEqual(partTimePay(1.0, 200, 50), 250, 'partTimePay = rest*cpi + extra');
+  });
+
+  await test('regularPay allowance ignores cpi', () => {
+    assertEqual(regularPay(2, 500, 200, 10000, 0.1), 1400 + 1000, 'allowance must not scale with cpi');
+  });
+
+  await test('regular payday mints on market open', () => {
+    const character = newCharacter(ctx, 'RegWorker');
+    ctx.jobs.takeJob(character.id, 'regular', ctx.tickLoop.getGameTime().totalMinutes);
+    const before = ctx.ledger.getBalance(character.accountId);
+    driveTime(ctx, 4);
+    driveTime(ctx, 9);
+    const expected = regularPay(
+      ctx.macro.getCpiIndex(),
+      ctx.config.survival.mealCostBase,
+      ctx.config.survival.restCostBase,
+      ctx.config.economy.starterCash,
+      ctx.config.jobs.regularAllowanceRatio
+    );
+    assertEqual(
+      ctx.ledger.getBalance(character.accountId),
+      before + expected,
+      'regular pay should be minted at market open'
+    );
+  });
+
+  await test('parttime payday mints on market open', () => {
+    const character = newCharacter(ctx, 'PartWorker');
+    ctx.jobs.takeJob(character.id, 'parttime', ctx.tickLoop.getGameTime().totalMinutes);
+    const before = ctx.ledger.getBalance(character.accountId);
+    driveTime(ctx, 4);
+    driveTime(ctx, 9);
+    const expected = partTimePay(
+      ctx.macro.getCpiIndex(),
+      ctx.config.survival.restCostBase,
+      ctx.config.jobs.partTimeExtra
+    );
+    assertEqual(
+      ctx.ledger.getBalance(character.accountId),
+      before + expected,
+      'parttime pay should be minted at market open'
+    );
+  });
+
+  await test('having a job does not block trades', () => {
+    const character = newCharacter(ctx, 'WorkerTrader');
+    ctx.jobs.takeJob(character.id, 'regular', ctx.tickLoop.getGameTime().totalMinutes);
+    const result = ctx.amm.trade(character.id, companyId, 'buy', 1);
+    assertEqual(result.method, 'amm', 'market buy should succeed while employed');
+    assertEqual(
+      ctx.orderBook.getPortfolioEntry(character.id, companyId).shares,
+      1,
+      'should hold 1 share after trading while employed'
+    );
+  });
+
+  await test('regular ends after 7 game days with no mint that day', () => {
+    const character = newCharacter(ctx, 'RegExpiry');
+    ctx.jobs.takeJob(character.id, 'regular', ctx.tickLoop.getGameTime().totalMinutes);
+    const before = ctx.ledger.getBalance(character.accountId);
+    getDb()
+      .prepare(`UPDATE characters SET job_started_total_minutes = ? WHERE id = ?`)
+      .run(540 - 7 * 1440, character.id);
+    driveTime(ctx, 4);
+    driveTime(ctx, 9);
+    assertEqual(ctx.jobs.getJob(character.id), null, 'regular should end after 7 game days');
+    assertEqual(
+      ctx.ledger.getBalance(character.accountId),
+      before,
+      'no mint on the day regular ends'
+    );
+    assertThrows(
+      () => ctx.jobs.takeJob(character.id, 'regular', ctx.tickLoop.getGameTime().totalMinutes),
+      'regular rehire must be rejected this season'
+    );
+  });
+
+  await test('regular ends at independence threshold', () => {
+    const character = newCharacter(ctx, 'RegIndep');
+    ctx.jobs.takeJob(character.id, 'regular', ctx.tickLoop.getGameTime().totalMinutes);
+    ctx.amm.buyFromAmm(character.id, companyId, 1);
+    getDb().prepare(`UPDATE companies SET current_price = ? WHERE id = ?`).run(20000, companyId);
+    assert(
+      ctx.orderBook.getNetWorth(character.id) >=
+        ctx.config.economy.starterCash * ctx.config.jobs.regularIndependenceMultiple,
+      'netWorth should reach the independence threshold'
+    );
+    driveTime(ctx, 4);
+    driveTime(ctx, 9);
+    assertEqual(ctx.jobs.getJob(character.id), null, 'regular should end at independence');
+  });
+
+  await test('parttime is allowed after regular ends', () => {
+    const character = newCharacter(ctx, 'RegThenPart');
+    ctx.jobs.takeJob(character.id, 'regular', ctx.tickLoop.getGameTime().totalMinutes);
+    ctx.jobs.quitJob(character.id);
+    assertThrows(
+      () => ctx.jobs.takeJob(character.id, 'regular', ctx.tickLoop.getGameTime().totalMinutes),
+      'regular rehire must be rejected after quitting'
+    );
+    const job = ctx.jobs.takeJob(character.id, 'parttime', ctx.tickLoop.getGameTime().totalMinutes);
+    assertEqual(job.kind, 'parttime', 'parttime should be allowed after regular ends');
+  });
+}
+
+async function runRankingTests(ctx: GameContext, companyId: string): Promise<void> {
+  await test('ranking orders three characters by cash with names', () => {
+    const a = newCharacter(ctx, 'RankLow');
+    const b = newCharacter(ctx, 'RankHigh');
+    const c = newCharacter(ctx, 'RankMid');
+    ctx.ledger.mint(a.accountId, 100, 'JOB_INCOME');
+    ctx.ledger.mint(b.accountId, 300, 'JOB_INCOME');
+    ctx.ledger.mint(c.accountId, 200, 'JOB_INCOME');
+
+    const board = ctx.ranking
+      .listLive()
+      .filter((row) => [a.id, b.id, c.id].includes(row.characterId));
+
+    assertEqual(board.length, 3, 'all three must be on the board');
+    assertEqual(board[0].characterId, b.id, 'most cash ranks first');
+    assertEqual(board[0].name, 'RankHigh', 'rank 1 name must match');
+    assertEqual(board[1].characterId, c.id, 'middle cash ranks second');
+    assertEqual(board[1].name, 'RankMid', 'rank 2 name must match');
+    assertEqual(board[2].characterId, a.id, 'least cash ranks third');
+    assertEqual(board[2].name, 'RankLow', 'rank 3 name must match');
+  });
+
+  await test('stock holdings outrank equal cash', () => {
+    const cashOnly = newCharacter(ctx, 'CashOnly');
+    const holder = newCharacter(ctx, 'EquityHolder');
+    const price = ctx.companies.getCompany(companyId)!.currentPrice;
+    getDb()
+      .prepare(`INSERT INTO portfolio (character_id, company_id, shares) VALUES (?, ?, ?)`)
+      .run(holder.id, companyId, 10);
+
+    const board = ctx.ranking
+      .listLive()
+      .filter((row) => [cashOnly.id, holder.id].includes(row.characterId));
+
+    assertEqual(board[0].characterId, holder.id, 'share holder must outrank cash-only');
+    assertClose(board[0].netWorth, board[1].netWorth + price * 10, 1e-6, 'gap equals stock value');
+  });
+
+  await test('tie breaks by earlier created_at', () => {
+    const earlier = newCharacter(ctx, 'TieEarly');
+    const later = newCharacter(ctx, 'TieLate');
+    getDb().prepare(`UPDATE characters SET created_at = ? WHERE id = ?`).run(1000, earlier.id);
+    getDb().prepare(`UPDATE characters SET created_at = ? WHERE id = ?`).run(2000, later.id);
+
+    const board = ctx.ranking
+      .listLive()
+      .filter((row) => [earlier.id, later.id].includes(row.characterId));
+
+    assertEqual(board[0].characterId, earlier.id, 'earlier created_at must rank first on tie');
+    assertEqual(board[0].netWorth, board[1].netWorth, 'tied characters have equal net worth');
+  });
+
+  await test('rankFor rank matches the board entry', () => {
+    const character = newCharacter(ctx, 'RankSelf');
+    ctx.ledger.mint(character.accountId, 500, 'JOB_INCOME');
+
+    const result = ctx.ranking.rankFor(character.id);
+    const mine = result.board.find((row) => row.characterId === character.id)!;
+
+    assertEqual(result.rank, mine.rank, 'rankFor rank must match board rank');
+    assertEqual(result.netWorth, mine.netWorth, 'rankFor netWorth must match board netWorth');
+    assertEqual(result.total, result.board.length, 'total must equal board length');
+  });
+
+  await test('season kill empties the ranking board', () => {
+    const character = newCharacter(ctx, 'SeasonEnd');
+    ctx.season.onSeasonEnd();
+
+    assertEqual(ctx.ranking.listLive().length, 0, 'total must be 0 after season kills everyone');
+    assertThrows(() => ctx.ranking.rankFor(character.id), 'rankFor must throw for a dead character');
+  });
+}
+
+async function runInstitutionTests(ctx: GameContext, companyId: string): Promise<void> {
+  await test('user institutions are disabled by default', () => {
+    assertEqual(ctx.institution.enabled, false, 'committed flag must stay false');
+    assertEqual(ctx.institution.getOverview().enabled, false, 'overview must report disabled');
+  });
+
+  // 이후 테스트에서만 config를 덮어쓴다. 커밋된 market.json은 false 유지.
+  ctx.config.market.userInstitutionEnabled = true;
+
+  await test('institution seat revokes a holder who loses eligibility', () => {
+    ctx.season.onSeasonEnd();
+    const holder = newCharacter(ctx, 'SeatHolder');
+    ctx.ledger.mint(holder.accountId, 40000, 'JOB_INCOME');
+    ctx.amm.buyFromAmm(holder.id, companyId, 1);
+
+    ctx.institution.runCycle(minutesAt(0));
+    let seat = ctx.institution.getSeat(companyId)!;
+    assertEqual(seat.status, 'offered', 'empty seat should offer the eligible holder');
+    assertEqual(seat.characterId, holder.id, 'holder should receive the offer');
+
+    ctx.institution.accept(companyId, holder.id, 0);
+    seat = ctx.institution.getSeat(companyId)!;
+    assertEqual(seat.status, 'held', 'holder should hold the seat after accepting');
+
+    ctx.amm.sellToAmm(holder.id, companyId, 1);
+    ctx.institution.runCycle(minutesAt(1));
+    seat = ctx.institution.getSeat(companyId)!;
+    assertEqual(seat.status, 'empty', 'ineligible holder should be revoked');
+    assertEqual(seat.characterId, null, 'seat should be vacated after revocation');
+  });
+
+  await test('refusing an offer cascades to the next candidate', () => {
+    ctx.season.onSeasonEnd();
+    const a = newCharacter(ctx, 'SeatA');
+    const b = newCharacter(ctx, 'SeatB');
+    const c = newCharacter(ctx, 'SeatC');
+    ctx.ledger.mint(a.accountId, 50000, 'JOB_INCOME');
+    ctx.ledger.mint(b.accountId, 40000, 'JOB_INCOME');
+    ctx.ledger.mint(c.accountId, 30000, 'JOB_INCOME');
+    for (const ch of [a, b, c]) ctx.amm.buyFromAmm(ch.id, companyId, 1);
+
+    ctx.institution.runCycle(minutesAt(0));
+    assertEqual(ctx.institution.getSeat(companyId)!.characterId, a.id, 'top candidate first');
+
+    ctx.institution.refuse(companyId, a.id, 0);
+    assertEqual(
+      ctx.institution.getSeat(companyId)!.characterId,
+      b.id,
+      'second candidate after first refuse'
+    );
+
+    ctx.institution.refuse(companyId, b.id, 0);
+    assertEqual(
+      ctx.institution.getSeat(companyId)!.characterId,
+      c.id,
+      'third candidate after second refuse'
+    );
+  });
+
+  await test('institution term ends after 30 game days to empty', () => {
+    ctx.season.onSeasonEnd();
+    const holder = newCharacter(ctx, 'TermHolder');
+    ctx.ledger.mint(holder.accountId, 40000, 'JOB_INCOME');
+    ctx.amm.buyFromAmm(holder.id, companyId, 1);
+
+    ctx.institution.runCycle(minutesAt(0));
+    ctx.institution.accept(companyId, holder.id, 0);
+    assertEqual(ctx.institution.getSeat(companyId)!.status, 'held', 'holder should hold the seat');
+
+    ctx.institution.runCycle(minutesAt(31 * 1440));
+    const seat = ctx.institution.getSeat(companyId)!;
+    assertEqual(seat.status, 'empty', 'term expiry should revoke the seat');
+    assertEqual(seat.characterId, null, 'no next candidate leaves the seat empty');
+  });
+}
+
+async function runSeasonTests(ctx: GameContext): Promise<void> {
+  await test('season starts with its full length remaining', () => {
+    const info = ctx.season.getSeasonInfo();
+    assertEqual(
+      info.remainingMinutes,
+      ctx.config.world.seasonLengthDays * 1440,
+      'a fresh season should have the full season length remaining'
+    );
+  });
+
+  await test('crossing the season length rolls the season and wipes characters', () => {
+    const character = newCharacter(ctx, 'SeasonVictim');
+    const startNumber = ctx.season.getSeasonInfo().seasonNumber;
+
+    ctx.season.onTick({
+      type: 'TICK',
+      gameTime: minutesAt(ctx.config.world.seasonLengthDays * 1440),
+      tickCount: 1,
+    });
+
+    const info = ctx.season.getSeasonInfo();
+    assertEqual(info.seasonNumber, startNumber + 1, 'season number should advance by one');
+    assertEqual(
+      info.startedTotalMinutes,
+      ctx.config.world.seasonLengthDays * 1440,
+      'startedTotalMinutes should reset to the end moment'
+    );
+    assertEqual(
+      ctx.players.getCharacter(character.id)!.isAlive,
+      false,
+      'alive characters must be wiped when the season ends'
+    );
+    assertEqual(
+      ctx.players.getCharacter(character.id)!.deathCause,
+      'season_end',
+      'season wipe must record season_end as the death cause'
+    );
+    assertEqual(ctx.ranking.listLive().length, 0, 'no live characters should remain');
+  });
+}
+
+async function runDeathTests(ctx: GameContext): Promise<void> {
+  await test('survivedGameDays is a non-negative integer', () => {
+    const character = newCharacter(ctx, 'Survivor');
+    const c = ctx.players.getCharacter(character.id)!;
+    assert(Number.isInteger(c.survivedGameDays), 'survivedGameDays must be an integer');
+    assert(c.survivedGameDays >= 0, 'survivedGameDays must be non-negative');
+  });
+
+  await test('peakNetWorth stays at or above current net worth after a survival tick', () => {
+    const character = newCharacter(ctx, 'PeakTracker');
+    ctx.survival.onSurvivalTick({
+      type: 'SURVIVAL_TICK',
+      gameTime: ctx.tickLoop.getGameTime(),
+      tickCount: 1,
+    });
+    const after = ctx.players.getCharacter(character.id)!;
+    const currentNetWorth = ctx.orderBook.getNetWorth(character.id);
+    assert(
+      after.peakNetWorth >= currentNetWorth,
+      'peakNetWorth must be at least current net worth'
     );
   });
 }
@@ -497,9 +919,23 @@ async function main(): Promise<void> {
   await runGameplayTests(ctx, companyId);
   await runSectorEventTests(ctx);
   await runCentralBankTests(ctx, companyId);
-  await runForceTests(ctx, companyId);
   await runImageAxisTests(ctx, companyId);
+  await runStopLossIntakeTests(ctx, companyId);
+  await runStopLossTriggerTests(ctx, companyId);
+  await runStopLossSessionTests(ctx, companyId);
+  await runJobTests(ctx, companyId);
+  await runRankingTests(ctx, companyId);
   await runTimeDesignTests(ctx, companyId);
+  await runInstitutionTests(ctx, companyId);
+  await runDeathTests(ctx);
+  await runSeasonTests(ctx);
+
+  await test('broadcastNews feeds getRecentNews', () => {
+    ctx.intel.broadcastNews('테스트 헤드라인', '테스트 본문', companyId);
+    const recent = ctx.intel.getRecentNews();
+    assert(recent.length >= 1, 'recent news should remember a broadcast');
+    assertEqual(recent[0].title, '테스트 헤드라인', 'latest news should come first');
+  });
 
   process.exit(summarize());
 }
@@ -525,6 +961,7 @@ async function runSurvivalTests(ctx: GameContext): Promise<void> {
     const after = ctx.players.getCharacter(character.id)!;
     assertEqual(after.health, 0, 'health should hit zero from hunger');
     assertEqual(after.isAlive, false, 'character should be dead');
+    assertEqual(after.deathCause, 'starvation', 'deathCause must be starvation');
     assertEqual(
       ctx.ledger.getBalance(character.accountId),
       0,

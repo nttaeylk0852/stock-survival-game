@@ -6,6 +6,7 @@ import { LedgerModule } from '../economy/ledger';
 import { PlayersModule } from '../players';
 import { WorldClockModule } from '../world/clock';
 import { MacroModule } from '../economy/macro';
+import { OrderBookModule } from '../market/orderbook';
 
 export class SurvivalModule implements GameModule {
   name = 'survival';
@@ -15,7 +16,8 @@ export class SurvivalModule implements GameModule {
     private ledger: LedgerModule,
     private players: PlayersModule,
     private clock: WorldClockModule,
-    private macro: MacroModule
+    private macro: MacroModule,
+    private orderBook: OrderBookModule
   ) {}
 
   init(): void {}
@@ -63,21 +65,27 @@ export class SurvivalModule implements GameModule {
       const character = this.players.getCharacter(id)!;
       let health = character.health;
       const minutesSinceMeal = (Date.now() - character.lastMealAt) / 60000;
+      let deathCause: 'starvation' | 'exposure' | null = null;
 
       if (minutesSinceMeal > this.config.survival.hungerThresholdMinutes) {
         health -= this.config.survival.hungerDamagePerTick;
+        deathCause = 'starvation';
       }
 
       if (character.isHomeless && isHarshWeather) {
         health -= this.config.survival.weatherDamagePerTick;
+        if (deathCause === null) deathCause = 'exposure';
       }
 
       health = Math.max(0, health);
       this.players.updateCharacter(id, { health });
 
+      // 묶음 15: 생존 틱에서 최고 순자산 갱신.
+      this.players.updatePeakNetWorth(id, this.orderBook.getNetWorth(id));
+
       if (health <= 0) {
-        this.players.killCharacter(id);
-        console.log(`[survival] Character ${id} died from survival conditions`);
+        this.players.killCharacter(id, deathCause ?? 'starvation');
+        console.log(`[survival] Character ${id} died from ${deathCause ?? 'starvation'}`);
       }
     }
   }

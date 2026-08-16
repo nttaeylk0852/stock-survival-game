@@ -49,6 +49,12 @@ export interface Character {
   isHomeless: boolean;
   isAlive: boolean;
   createdAt: number;
+  jobKind: 'regular' | 'parttime' | null;
+  jobStartedTotalMinutes: number | null;
+  regularDoneSeason: boolean;
+  deathCause: 'starvation' | 'exposure' | 'season_end' | null;
+  survivedGameDays: number;
+  peakNetWorth: number;
 }
 
 export interface Account {
@@ -134,8 +140,9 @@ export interface MacroState {
 
 export interface SeasonInfo {
   seasonNumber: number;
-  startedAt: number;
-  endsAt: number;
+  startedTotalMinutes: number;
+  endsTotalMinutes: number;
+  remainingMinutes: number;
   medals: string[];
 }
 
@@ -147,8 +154,6 @@ export interface MarketSessionState {
 }
 
 export interface DailyActionsState {
-  tradesUsed: number;
-  tradeLimit: number;
   intelUsed: number;
   intelLimit: number;
 }

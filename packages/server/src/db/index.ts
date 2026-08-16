@@ -60,6 +60,12 @@ export function runMigrations(): void {
       is_homeless INTEGER NOT NULL DEFAULT 1,
       is_alive INTEGER NOT NULL DEFAULT 1,
       created_at INTEGER NOT NULL,
+      job_kind TEXT,
+      job_started_total_minutes INTEGER,
+      regular_done_season INTEGER NOT NULL DEFAULT 0,
+      death_cause TEXT,
+      created_total_minutes INTEGER NOT NULL DEFAULT 0,
+      peak_net_worth REAL NOT NULL DEFAULT 0,
       FOREIGN KEY (user_account_id) REFERENCES user_accounts(id),
       FOREIGN KEY (account_id) REFERENCES accounts(id)
     );
@@ -130,6 +136,13 @@ export function runMigrations(): void {
       FOREIGN KEY (character_id) REFERENCES characters(id)
     );
 
+    CREATE TABLE IF NOT EXISTS institution_seats (
+      company_id TEXT PRIMARY KEY,
+      character_id TEXT,
+      started_total_minutes INTEGER,
+      status TEXT NOT NULL DEFAULT 'empty'
+    );
+
     CREATE TABLE IF NOT EXISTS intel_items (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -184,6 +197,27 @@ export function runMigrations(): void {
   const orderCols = database.prepare(`PRAGMA table_info(orders)`).all() as { name: string }[];
   if (!orderCols.some((c) => c.name === 'order_type')) {
     database.exec(`ALTER TABLE orders ADD COLUMN order_type TEXT NOT NULL DEFAULT 'limit'`);
+  }
+
+  // 기존 DB 대응: 직업 컬럼 추가 (묶음 10).
+  const charCols = database.prepare(`PRAGMA table_info(characters)`).all() as { name: string }[];
+  if (!charCols.some((c) => c.name === 'job_kind')) {
+    database.exec(`ALTER TABLE characters ADD COLUMN job_kind TEXT`);
+  }
+  if (!charCols.some((c) => c.name === 'job_started_total_minutes')) {
+    database.exec(`ALTER TABLE characters ADD COLUMN job_started_total_minutes INTEGER`);
+  }
+  if (!charCols.some((c) => c.name === 'regular_done_season')) {
+    database.exec(`ALTER TABLE characters ADD COLUMN regular_done_season INTEGER NOT NULL DEFAULT 0`);
+  }
+  if (!charCols.some((c) => c.name === 'death_cause')) {
+    database.exec(`ALTER TABLE characters ADD COLUMN death_cause TEXT`);
+  }
+  if (!charCols.some((c) => c.name === 'created_total_minutes')) {
+    database.exec(`ALTER TABLE characters ADD COLUMN created_total_minutes INTEGER NOT NULL DEFAULT 0`);
+  }
+  if (!charCols.some((c) => c.name === 'peak_net_worth')) {
+    database.exec(`ALTER TABLE characters ADD COLUMN peak_net_worth REAL NOT NULL DEFAULT 0`);
   }
 }
 

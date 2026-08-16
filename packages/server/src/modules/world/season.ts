@@ -9,7 +9,8 @@ import { TickEvent } from '@stock-survival/shared';
 export class SeasonModule implements GameModule {
   name = 'world/season';
   private seasonNumber = 1;
-  private seasonStartedAt = Date.now();
+  private seasonStartedTotalMinutes = 0;
+  private currentTotalMinutes = 0;
 
   constructor(
     private config: AppConfig,
@@ -23,14 +24,21 @@ export class SeasonModule implements GameModule {
       | { value: string }
       | undefined;
     if (row) this.seasonNumber = parseInt(row.value, 10);
+
+    const startRow = db
+      .prepare(`SELECT value FROM system_state WHERE key = 'season_started_minutes'`)
+      .get() as { value: string } | undefined;
+    if (startRow) this.seasonStartedTotalMinutes = parseInt(startRow.value, 10);
   }
 
   getSeasonInfo() {
-    const seasonLengthMs = this.config.world.seasonLengthDays * 24 * 60 * 60 * 1000;
+    const seasonLengthMinutes = this.config.world.seasonLengthDays * 1440;
+    const endsTotalMinutes = this.seasonStartedTotalMinutes + seasonLengthMinutes;
     return {
       seasonNumber: this.seasonNumber,
-      startedAt: this.seasonStartedAt,
-      endsAt: this.seasonStartedAt + seasonLengthMs,
+      startedTotalMinutes: this.seasonStartedTotalMinutes,
+      endsTotalMinutes,
+      remainingMinutes: Math.max(0, endsTotalMinutes - this.currentTotalMinutes),
       medals: [] as string[],
     };
   }
@@ -51,19 +59,29 @@ export class SeasonModule implements GameModule {
 
     for (const { id } of aliveChars) {
       try {
-        this.players.killCharacter(id);
+        this.players.killCharacter(id, 'season_end');
       } catch {
         // already dead
       }
     }
 
+    db.prepare(
+      `UPDATE characters SET regular_done_season = 0, job_kind = NULL, job_started_total_minutes = NULL`
+    ).run();
+
     const endedSeasonNumber = this.seasonNumber;
     this.seasonNumber += 1;
-    this.seasonStartedAt = Date.now();
+    if (event) {
+      this.seasonStartedTotalMinutes = event.gameTime.totalMinutes;
+    }
     db.prepare(
       `INSERT INTO system_state (key, value) VALUES ('season_number', ?)
        ON CONFLICT(key) DO UPDATE SET value = excluded.value`
     ).run(String(this.seasonNumber));
+    db.prepare(
+      `INSERT INTO system_state (key, value) VALUES ('season_started_minutes', ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+    ).run(String(this.seasonStartedTotalMinutes));
 
     console.log(`[season] Season ${endedSeasonNumber} ended. Great Depression event triggered.`);
 
@@ -82,8 +100,10 @@ export class SeasonModule implements GameModule {
   }
 
   onTick(event: TickEvent): void {
-    const info = this.getSeasonInfo();
-    if (Date.now() >= info.endsAt) {
+    this.currentTotalMinutes = event.gameTime.totalMinutes;
+    const endsTotalMinutes =
+      this.seasonStartedTotalMinutes + this.config.world.seasonLengthDays * 1440;
+    if (event.gameTime.totalMinutes >= endsTotalMinutes) {
       this.onSeasonEnd(event);
     }
   }

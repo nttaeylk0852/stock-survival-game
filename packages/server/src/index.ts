@@ -38,6 +38,7 @@ async function main(): Promise<void> {
     res.json(body);
   });
 
+  app.use(express.static(path.resolve(__dirname, '../../../packages/web/public')));
   app.use('/api', createRouter(ctx));
 
   app.use((_req, res) => {
@@ -56,7 +57,7 @@ async function main(): Promise<void> {
     wsServer.broadcastNews(news.title, news.body, news.companyId);
   });
   ctx.sectors.onBankruptcy((sectors) => {
-    wsServer.broadcastNews('[속보] 파산 전염', `${sectors.join(', ')} 섹터 지수 하락`, null);
+    wsServer.broadcastNews('[Breaking] Bankruptcy contagion', `${sectors.join(', ')} sector indices fall`, null);
   });
 
   // 5. Tick loop

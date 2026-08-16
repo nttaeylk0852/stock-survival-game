@@ -2,6 +2,7 @@ import { Server } from 'http';
 import { WebSocket, WebSocketServer } from 'ws';
 import { TickEvent, WorldState, WsMessage } from '@stock-survival/shared';
 import { eventBus } from '../core/event-bus';
+import { PriceFactor } from '../modules/companies/pricing';
 import { GameContext } from './context';
 
 export class GameWebSocketServer {
@@ -88,12 +89,19 @@ export class GameWebSocketServer {
     };
   }
 
-  private buildPricePayload(): { id: string; name: string; price: number; status: string }[] {
+  private buildPricePayload(): {
+    id: string;
+    name: string;
+    price: number;
+    status: string;
+    factors: PriceFactor[];
+  }[] {
     return this.ctx.companies.getAllCompanies().map((company) => ({
       id: company.id,
       name: company.name,
       price: company.currentPrice,
       status: company.status,
+      factors: this.ctx.companies.getPriceFactors(company.id),
     }));
   }
 }

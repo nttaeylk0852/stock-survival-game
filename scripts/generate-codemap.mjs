@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * Generates docs/codemap.md — a compact map of backend source files and their
- * top-level exports, so AI agents can orient without reading every file.
+ * Generates docs/codemap.md — 소스 파일별 export 시그니처 색인.
+ * "어느 파일에 무엇이 있나"만 담당한다. 모듈의 의미·역할 설명은 docs/modules/*.md 가 담당.
+ * 토큰 비용 0 (LLM API 사용 안 함).
  *
  * Usage: npm run codemap
  */
@@ -72,7 +73,8 @@ function buildMarkdown() {
   const lines = [];
   lines.push('# Code Map');
   lines.push('');
-  lines.push('> 자동 생성됨 — `npm run codemap` 으로 재생성. AI 컨텍스트 파악용 요약.');
+  lines.push('> 자동 생성됨 — `npm run codemap` 으로 재생성. 시그니처 색인 전용.');
+  lines.push('> 모듈별 역할·config·주요 함수 설명은 `docs/modules/*.md` 를 볼 것.');
   lines.push('');
   lines.push(`생성 시각: ${new Date().toISOString()}`);
   lines.push('');

@@ -9,7 +9,6 @@ import { OrderBookModule } from './orderbook';
 import { InfluenceModule } from './influence';
 import { CircuitBreaker } from './circuit-breaker';
 import type { MarketSession } from '../world/market-session';
-import type { DailyActionsModule } from '../players/daily-actions';
 
 export class AmmModule implements GameModule {
   name = 'market/amm';
@@ -22,8 +21,7 @@ export class AmmModule implements GameModule {
     private orderBook: OrderBookModule,
     private influence: InfluenceModule,
     private circuitBreaker: CircuitBreaker,
-    private marketSession: MarketSession,
-    private dailyActions: DailyActionsModule
+    private marketSession: MarketSession
   ) {}
 
   init(): void {}
@@ -123,7 +121,6 @@ export class AmmModule implements GameModule {
     orderType: 'limit' | 'stop' = 'limit'
   ): { method: 'orderbook' | 'amm'; price: number; total: number } {
     if (this.circuitBreaker.isHalted()) throw new Error('Trading halted by circuit breaker');
-    if (!this.dailyActions.canTrade(characterId)) throw new Error('Daily trade limit reached');
 
     if (orderType === 'stop') {
       if (!limitPrice || limitPrice <= 0) throw new Error('Stop price is required');
@@ -135,13 +132,11 @@ export class AmmModule implements GameModule {
         quantity,
         'stop'
       );
-      this.dailyActions.recordTrade(characterId);
       return { method: 'orderbook', price: order.price, total: order.price * quantity };
     }
 
     if (limitPrice) {
       this.orderBook.placeOrder(characterId, companyId, side, limitPrice, quantity);
-      this.dailyActions.recordTrade(characterId);
       return { method: 'orderbook', price: limitPrice, total: limitPrice * quantity };
     }
 
@@ -149,35 +144,28 @@ export class AmmModule implements GameModule {
       side === 'buy'
         ? this.buyFromAmm(characterId, companyId, quantity)
         : this.sellToAmm(characterId, companyId, quantity);
-    this.dailyActions.recordTrade(characterId);
     return { method: 'amm', ...result };
   }
 
-  /** 손절(stop) 예약주문 트리거 — 개장 중 가격 교차 시 시장가로 체결. */
+  /** 손절(stop) 예약주문 트리거 — 개장 중 조건가 이하 시 시장가 매도. 체결 실패 시 주문은 open 유지. */
   onPriceTick(_event: TickEvent): void {
     if (!this.marketSession.isMarketOpen()) return;
 
     for (const order of this.orderBook.getOpenStopOrders()) {
+      if (order.side !== 'sell') continue;
       const company = this.companies.getCompany(order.companyId);
       if (!company || company.status !== 'ACTIVE') continue;
-      const current = company.currentPrice;
+      if (company.currentPrice > order.price) continue;
 
-      const triggered =
-        (order.side === 'sell' && current <= order.price) ||
-        (order.side === 'buy' && current >= order.price);
-      if (!triggered) continue;
+      const holdings = this.orderBook.getPortfolioEntry(order.characterId, order.companyId);
+      const qty = Math.min(order.quantity, holdings.shares);
+      if (qty <= 0) continue;
 
-      this.orderBook.cancelOrder(order.id, order.characterId);
       try {
-        if (order.side === 'sell') {
-          const holdings = this.orderBook.getPortfolioEntry(order.characterId, order.companyId);
-          const qty = Math.min(order.quantity, holdings.shares);
-          if (qty > 0) this.sellToAmm(order.characterId, order.companyId, qty);
-        } else {
-          this.buyFromAmm(order.characterId, order.companyId, order.quantity);
-        }
+        this.sellToAmm(order.characterId, order.companyId, qty);
+        getDb().prepare(`UPDATE orders SET status = 'filled' WHERE id = ?`).run(order.id);
       } catch {
-        // 잔고 부족 등으로 체결 실패해도 주문은 이미 취소됨.
+        // 체결 실패 시 주문은 open 유지
       }
     }
   }

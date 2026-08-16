@@ -32,13 +32,16 @@ export interface EconomyConfig {
 
 export interface MarketConfig {
   userInfluenceCap: number;
+  userInstitutionEnabled: boolean;
+  institutionTermGameDays: number;
+  institutionMinNetWorthMultiple: number;
+  institutionSeatPerCompany: number;
   ammSlippageRate: number;
   ammFeeRate: number;
   orderBookMaxDepth: number;
   priceStabilityMaxDrop: number;
   priceStabilityMaxGain: number;
   historicalMedianWindow: number;
-  dailyTradeLimit: number;
 }
 
 export interface SurvivalConfig {
@@ -49,6 +52,13 @@ export interface SurvivalConfig {
   mealCostBase: number;
   restCostBase: number;
   mealHealthRestore: number;
+}
+
+export interface JobsConfig {
+  regularAllowanceRatio: number;
+  regularDurationGameDays: number;
+  regularIndependenceMultiple: number;
+  partTimeExtra: number;
 }
 
 export interface WorldConfig {
@@ -95,20 +105,6 @@ export interface SectorsConfig {
   sectorContagionDrop: number;
   indexMin: number;
   indexMax: number;
-}
-
-export interface ForceProfile {
-  id: string;
-  name: string;
-  startingCapital: number;
-  tradeSizeRatio: number;
-  cooldownTicks: number;
-  params: Record<string, number>;
-}
-
-export interface ForcesConfig {
-  positionLimit: number;
-  profiles: ForceProfile[];
 }
 
 export interface CentralBankConfig {
@@ -174,6 +170,7 @@ export function loadAllConfig() {
   return {
     economy: loadConfig<EconomyConfig>('economy.json'),
     market: loadConfig<MarketConfig>('market.json'),
+    jobs: loadConfig<JobsConfig>('jobs.json'),
     survival: loadConfig<SurvivalConfig>('survival.json'),
     world: loadConfig<WorldConfig>('world.json'),
     companies: loadConfig<CompaniesConfig>('companies.json'),
@@ -183,7 +180,6 @@ export function loadAllConfig() {
     newsEvents: loadConfig<NewsEventsConfig>('news-events.json'),
     commodities: loadConfig<CommoditiesConfig>('commodities.json'),
     companySeeds: loadConfig<CompanySeed[]>('companies.seed.json'),
-    forces: loadConfig<ForcesConfig>('forces.json'),
   };
 }
 

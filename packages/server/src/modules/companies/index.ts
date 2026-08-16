@@ -242,10 +242,10 @@ export class CompaniesModule implements GameModule {
     const prev = this.factorState.get(company.id);
 
     const factors: PriceFactor[] = [
-      { name: '금리', direction: this.direction(prev?.interestRate, interestRate, true) },
-      { name: '원자재', direction: this.direction(prev?.materialIndex, materialIndex, true) },
-      { name: '섹터', direction: this.direction(prev?.sectorMultiplier, sectorMultiplier, false) },
-      { name: '실적', direction: this.direction(prev?.statScore, statScore, false) },
+      { name: 'Rates', direction: this.direction(prev?.interestRate, interestRate, true) },
+      { name: 'Commodities', direction: this.direction(prev?.materialIndex, materialIndex, true) },
+      { name: 'Sector', direction: this.direction(prev?.sectorMultiplier, sectorMultiplier, false) },
+      { name: 'Earnings', direction: this.direction(prev?.statScore, statScore, false) },
     ];
 
     this.factorState.set(company.id, { interestRate, materialIndex, sectorMultiplier, statScore });

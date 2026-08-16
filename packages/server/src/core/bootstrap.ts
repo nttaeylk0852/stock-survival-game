@@ -11,15 +11,17 @@ import { PlayersModule } from '../modules/players';
 import { OrderBookModule } from '../modules/market/orderbook';
 import { AmmModule } from '../modules/market/amm';
 import { GovernanceModule } from '../modules/governance';
+import { InstitutionModule } from '../modules/governance/institution';
 import { IntelModule } from '../modules/intel';
 import { WorldClockModule } from '../modules/world/clock';
 import { SurvivalModule } from '../modules/survival';
 import { SeasonModule } from '../modules/world/season';
 import { CircuitBreaker } from '../modules/market/circuit-breaker';
 import { CentralBankModule } from '../modules/economy/central-bank';
-import { ForcesModule } from '../modules/forces';
 import { MarketSession, MarketSessionModule } from '../modules/world/market-session';
 import { DailyActionsModule } from '../modules/players/daily-actions';
+import { JobsModule } from '../modules/players/jobs';
+import { RankingModule } from '../modules/players/ranking';
 
 /**
  * Builds every game module in dependency order and registers them.
@@ -33,7 +35,7 @@ export async function bootstrapGame(): Promise<GameContext> {
   // Dependency order: ledger -> players -> sectors -> macro -> companies ->
   // influence -> orderbook -> amm -> governance -> intel -> clock -> survival -> season
   const ledger = new LedgerModule(config);
-  const players = new PlayersModule(config, ledger);
+  const players = new PlayersModule(config, ledger, tickLoop);
   const sectors = new SectorsModule(config);
   const macro = new MacroModule(config, ledger, players, sectors);
   const marketSession = new MarketSession(config);
@@ -50,6 +52,8 @@ export async function bootstrapGame(): Promise<GameContext> {
     circuitBreaker,
     marketSession
   );
+  const jobs = new JobsModule(config, ledger, players, orderBook, macro);
+  const ranking = new RankingModule(players, orderBook);
   const amm = new AmmModule(
     config,
     ledger,
@@ -58,10 +62,10 @@ export async function bootstrapGame(): Promise<GameContext> {
     orderBook,
     influence,
     circuitBreaker,
-    marketSession,
-    dailyActions
+    marketSession
   );
   const governance = new GovernanceModule(config, companies, orderBook, influence);
+  const institution = new InstitutionModule(config, players, orderBook, companies);
   const intel = new IntelModule(
     config,
     ledger,
@@ -73,7 +77,6 @@ export async function bootstrapGame(): Promise<GameContext> {
     marketSession,
     dailyActions
   );
-  const forces = new ForcesModule(config, ledger, amm, companies, intel);
   const centralBank = new CentralBankModule(config, companies, sectors, intel, circuitBreaker);
   const clock = new WorldClockModule(config, tickLoop);
   const marketSessionModule = new MarketSessionModule(
@@ -81,9 +84,10 @@ export async function bootstrapGame(): Promise<GameContext> {
     marketSession,
     intel,
     dailyActions,
-    macro
+    macro,
+    jobs
   );
-  const survival = new SurvivalModule(config, ledger, players, clock, macro);
+  const survival = new SurvivalModule(config, ledger, players, clock, macro, orderBook);
   const season = new SeasonModule(config, ledger, players);
 
   for (const mod of [
@@ -96,9 +100,11 @@ export async function bootstrapGame(): Promise<GameContext> {
     influence,
     orderBook,
     amm,
+    jobs,
+    ranking,
     governance,
+    institution,
     intel,
-    forces,
     centralBank,
     clock,
     marketSessionModule,
@@ -122,14 +128,16 @@ export async function bootstrapGame(): Promise<GameContext> {
     orderBook,
     amm,
     governance,
+    institution,
     intel,
-    forces,
     centralBank,
     circuitBreaker,
     clock,
     marketSession,
     marketSessionModule,
     dailyActions,
+    jobs,
+    ranking,
     survival,
     season,
   };

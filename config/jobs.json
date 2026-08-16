@@ -1,0 +1,6 @@
+{
+  "regularAllowanceRatio": 0.1,
+  "regularDurationGameDays": 7,
+  "regularIndependenceMultiple": 2,
+  "partTimeExtra": 50
+}

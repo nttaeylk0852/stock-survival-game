@@ -103,8 +103,8 @@ export class CentralBankModule implements GameModule {
         this.circuitBreaker.halt(cb.circuitBreakerHaltTicks);
         this.circuitBreakerCooldown = cb.circuitBreakerCooldownTicks;
         this.intel.broadcastNews(
-          '[서킷브레이커] 시장 급락',
-          `지수가 하루 새 ${Math.round(drawdown * 100)}% 하락해 거래가 일시정지됩니다.`,
+          '[Circuit breaker] Market plunge',
+          `The index fell ${Math.round(drawdown * 100)}% in a day; trading is halted.`,
           null
         );
       }
@@ -126,8 +126,8 @@ export class CentralBankModule implements GameModule {
       this.applyCompanyDilution(company, d);
       this.bailoutCooldown.set(company.id, cb.bailoutCooldownTicks);
       this.intel.broadcastNews(
-        `[구제금융] ${company.name} 정부 개입`,
-        '부채 일부 탕감과 함께 신주가 발행되어 기존 주식이 희석됩니다.',
+        `[Bailout] ${company.name} government intervention`,
+        'New shares are issued and some debt is written off, diluting existing shares.',
         company.id
       );
     }

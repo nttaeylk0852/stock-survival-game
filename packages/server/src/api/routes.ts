@@ -39,7 +39,12 @@ export function createRouter(ctx: GameContext): Router {
     handle((req, res) => {
       const character = ctx.players.getCharacter(req.params.id);
       if (!character) throw new Error('Character not found');
-      ok(res, { character, balance: ctx.ledger.getBalance(character.accountId) });
+      ok(res, {
+        character,
+        balance: ctx.ledger.getBalance(character.accountId),
+        job: ctx.jobs.getJob(req.params.id),
+        netWorth: ctx.orderBook.getNetWorth(req.params.id),
+      });
     })
   );
 
@@ -63,7 +68,58 @@ export function createRouter(ctx: GameContext): Router {
 
       const balance = ctx.ledger.getBalance(character.accountId);
       const stockValue = entries.reduce((sum, e) => sum + e.value, 0);
-      ok(res, { balance, stockValue, netWorth: balance + stockValue, entries });
+      ok(res, { balance, stockValue, netWorth: ctx.orderBook.getNetWorth(req.params.id), entries });
+    })
+  );
+
+  router.get(
+    '/characters/:id/orders',
+    handle((req, res) => {
+      const character = ctx.players.getCharacter(req.params.id);
+      if (!character) throw new Error('Character not found');
+      ok(res, { orders: ctx.orderBook.getOpenOrdersForCharacter(req.params.id) });
+    })
+  );
+
+  // ---------- jobs ----------
+  router.post(
+    '/jobs',
+    handle((req, res) => {
+      const { characterId, kind } = req.body as { characterId?: string; kind?: 'regular' | 'parttime' };
+      if (!characterId || !kind) throw new Error('characterId and kind are required');
+      if (kind !== 'regular' && kind !== 'parttime') throw new Error('kind must be regular or parttime');
+      const job = ctx.jobs.takeJob(characterId, kind, ctx.tickLoop.getGameTime().totalMinutes);
+      ok(res, { job });
+    })
+  );
+
+  router.delete(
+    '/jobs',
+    handle((req, res) => {
+      const { characterId } = req.body as { characterId?: string };
+      if (!characterId) throw new Error('characterId is required');
+      ctx.jobs.quitJob(characterId);
+      ok(res, { quit: true });
+    })
+  );
+
+  // ---------- ranking ----------
+  router.get(
+    '/ranking',
+    handle((req, res) => {
+      const characterId = req.query.characterId as string | undefined;
+      if (!characterId) {
+        const board = ctx.ranking.listLive().map((row, index) => ({ rank: index + 1, ...row }));
+        ok(res, { myRank: null, myNetWorth: null, total: board.length, board });
+        return;
+      }
+      const result = ctx.ranking.rankFor(characterId);
+      ok(res, {
+        myRank: result.rank,
+        myNetWorth: result.netWorth,
+        total: result.total,
+        board: result.board,
+      });
     })
   );
 

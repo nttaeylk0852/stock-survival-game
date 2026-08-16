@@ -4,13 +4,15 @@ import { getDb } from '../../db';
 import { AppConfig } from '../../core/config-loader';
 import { GameModule } from '../../core/module-registry';
 import { LedgerModule } from '../economy/ledger';
+import { TickLoop } from '../../core/tick-loop';
 
 export class PlayersModule implements GameModule {
   name = 'players';
 
   constructor(
     private config: AppConfig,
-    private ledger: LedgerModule
+    private ledger: LedgerModule,
+    private tickLoop: TickLoop
   ) {}
 
   init(): void {}
@@ -48,8 +50,8 @@ export class PlayersModule implements GameModule {
         characterId
       );
       db.prepare(
-        `INSERT INTO characters (id, user_account_id, account_id, name, health, last_meal_at, is_homeless, is_alive, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, 1, 1, ?)`
+        `INSERT INTO characters (id, user_account_id, account_id, name, health, last_meal_at, is_homeless, is_alive, created_at, created_total_minutes)
+         VALUES (?, ?, ?, ?, ?, ?, 1, 1, ?, ?)`
       ).run(
         characterId,
         userAccountId,
@@ -57,7 +59,8 @@ export class PlayersModule implements GameModule {
         name,
         this.config.survival.maxHealth,
         now,
-        now
+        now,
+        this.tickLoop.getGameTime().totalMinutes
       );
     });
     tx();
@@ -71,11 +74,21 @@ export class PlayersModule implements GameModule {
     const db = getDb();
     const row = db
       .prepare(
-        `SELECT id, account_id, name, health, last_meal_at, is_homeless, is_alive, created_at
+        `SELECT id, account_id, name, health, last_meal_at, is_homeless, is_alive, created_at,
+                job_kind, job_started_total_minutes, regular_done_season,
+                death_cause, created_total_minutes, peak_net_worth
          FROM characters WHERE id = ?`
       )
       .get(characterId) as Record<string, unknown> | undefined;
     if (!row) return null;
+
+    const createdTotalMinutes = (row.created_total_minutes as number | null) ?? 0;
+    const currentTotalMinutes = this.tickLoop.getGameTime().totalMinutes;
+    const survivedGameDays = Math.max(
+      0,
+      Math.floor((currentTotalMinutes - createdTotalMinutes) / 1440)
+    );
+
     return {
       id: row.id as string,
       accountId: row.account_id as string,
@@ -85,6 +98,12 @@ export class PlayersModule implements GameModule {
       isHomeless: Boolean(row.is_homeless),
       isAlive: Boolean(row.is_alive),
       createdAt: row.created_at as number,
+      jobKind: (row.job_kind as 'regular' | 'parttime' | null) ?? null,
+      jobStartedTotalMinutes: (row.job_started_total_minutes as number | null) ?? null,
+      regularDoneSeason: Boolean(row.regular_done_season),
+      deathCause: (row.death_cause as Character['deathCause']) ?? null,
+      survivedGameDays,
+      peakNetWorth: (row.peak_net_worth as number | null) ?? 0,
     };
   }
 
@@ -99,7 +118,10 @@ export class PlayersModule implements GameModule {
     return this.getCharacter(row.id);
   }
 
-  killCharacter(characterId: string): { seizedAmount: number } {
+  killCharacter(
+    characterId: string,
+    deathCause: 'starvation' | 'exposure' | 'season_end'
+  ): { seizedAmount: number } {
     const character = this.getCharacter(characterId);
     if (!character || !character.isAlive) {
       throw new Error('Character not found or already dead');
@@ -108,9 +130,20 @@ export class PlayersModule implements GameModule {
     const db = getDb();
     const seizedAmount = this.ledger.seizeAll(character.accountId);
 
-    db.prepare(`UPDATE characters SET is_alive = 0, health = 0 WHERE id = ?`).run(characterId);
+    db.prepare(`UPDATE characters SET is_alive = 0, health = 0, death_cause = ? WHERE id = ?`).run(
+      deathCause,
+      characterId
+    );
 
     return { seizedAmount };
+  }
+
+  /** 생존 틱에서 호출. 현재 순자산이 기존 최고치보다 크면 갱신한다. */
+  updatePeakNetWorth(characterId: string, netWorth: number): void {
+    const db = getDb();
+    db.prepare(
+      `UPDATE characters SET peak_net_worth = ? WHERE id = ? AND peak_net_worth < ?`
+    ).run(netWorth, characterId, netWorth);
   }
 
   updateCharacter(

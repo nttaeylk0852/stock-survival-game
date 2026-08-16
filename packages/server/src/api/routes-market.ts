@@ -155,6 +155,62 @@ function attachIntelRoutes(router: Router, ctx: GameContext): Router {
     })
   );
 
+  // ---------- institutions ----------
+  router.get(
+    '/institutions',
+    handle((_req, res) => {
+      ok(res, ctx.institution.getOverview());
+    })
+  );
+
+  router.post(
+    '/institutions/:companyId/accept',
+    handle((req, res) => {
+      if (!ctx.institution.enabled) {
+        ok(res, { enabled: false });
+        return;
+      }
+      const { characterId } = req.body as { characterId?: string };
+      if (!characterId) throw new Error('characterId is required');
+      ok(res, {
+        enabled: true,
+        seat: ctx.institution.accept(
+          req.params.companyId,
+          characterId,
+          ctx.tickLoop.getGameTime().totalMinutes
+        ),
+      });
+    })
+  );
+
+  router.post(
+    '/institutions/:companyId/refuse',
+    handle((req, res) => {
+      if (!ctx.institution.enabled) {
+        ok(res, { enabled: false });
+        return;
+      }
+      const { characterId } = req.body as { characterId?: string };
+      if (!characterId) throw new Error('characterId is required');
+      ok(res, {
+        enabled: true,
+        seat: ctx.institution.refuse(
+          req.params.companyId,
+          characterId,
+          ctx.tickLoop.getGameTime().totalMinutes
+        ),
+      });
+    })
+  );
+
+  // ---------- news ----------
+  router.get(
+    '/news',
+    handle((_req, res) => {
+      ok(res, ctx.intel.getRecentNews());
+    })
+  );
+
   // ---------- world ----------
   router.get(
     '/world',

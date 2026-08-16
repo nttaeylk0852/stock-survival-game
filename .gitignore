@@ -23,8 +23,17 @@ Thumbs.db
 
 # Temp
 gitcheck*.txt
+test-out*.txt
+weblist.txt
+weblines.txt
+nodever.txt
+gitlog.txt
+gitstatus.txt
 
 # Runtime data
 packages/server/data/*.db
 packages/server/data/*.db-shm
 packages/server/data/*.db-wal
+*.db
+*.db-wal
+*.db-shm

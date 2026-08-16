@@ -4,6 +4,7 @@ import type { GameModule } from '../../core/module-registry';
 import type { IntelModule } from '../intel';
 import type { DailyActionsModule } from '../players/daily-actions';
 import type { MacroModule } from '../economy/macro';
+import type { JobsModule } from '../players/jobs';
 
 /** 개장 판정 (§7): 09:00 ~ 익일 01:00. 자정을 넘는 구간을 지원한다. */
 export function isMarketOpen(gameTime: GameTime, openHour: number, closeHour: number): boolean {
@@ -87,7 +88,8 @@ export class MarketSessionModule implements GameModule {
     private session: MarketSession,
     private intel: IntelModule,
     private dailyActions: DailyActionsModule,
-    private macro: MacroModule
+    private macro: MacroModule,
+    private jobs: JobsModule
   ) {}
 
   init(): void {}
@@ -99,13 +101,14 @@ export class MarketSessionModule implements GameModule {
 
     if (!wasOpen && nowOpen) {
       this.dailyActions.resetAll();
+      this.jobs.onMarketOpen(event.gameTime);
     }
 
     if (wasOpen && !nowOpen) {
       const rate = this.macro.getInterestRate();
       this.intel.broadcastNews(
-        '[휴장] 시장 마감',
-        `오늘 장이 종료되었습니다. 내일 장 시작 전 금리가 발표될 예정입니다. (현재 금리 ${(
+        '[Closed] Market closed',
+        `The market is closed for today. The interest rate will be announced before tomorrow's open. (Current rate ${(
           rate * 100
         ).toFixed(2)}%)`,
         null
