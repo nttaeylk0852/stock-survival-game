@@ -28,6 +28,8 @@ WORKDIR /app
 # node resolves `@stock-survival/shared` via the root node_modules symlink -> packages/shared/package.json.
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/node_modules ./node_modules
+# better-sqlite3 (native) is not hoisted to root node_modules; it lives in the server workspace.
+COPY --from=build /app/packages/server/node_modules ./packages/server/node_modules
 COPY --from=build /app/packages/server/package.json ./packages/server/package.json
 COPY --from=build /app/packages/server/dist ./packages/server/dist
 COPY --from=build /app/packages/shared/package.json ./packages/shared/package.json
