@@ -447,12 +447,14 @@ function renderSurvival() {
 }
 
 // ---------- 주문 ----------
-function renderOrders() {
-  const el = $('#tab-orders');
-  const open = state.world ? (state.world.market.open ? 'Open' : 'Closed') : '—';
+function renderHoldings() {
   const holdings = (state.portfolio ? state.portfolio.entries : []).map((e) =>
     `<li>${esc(e.companyName)} — ${e.shares} × ${fmt(e.currentPrice)} = ${fmt(e.value)}</li>`
   ).join('');
+  return holdings || '<li class="empty">No holdings</li>';
+}
+
+function renderOrderItems() {
   const orders = (state.orders || []).map((o) =>
     `<li>
       ${o.side === 'buy' ? 'Buy' : 'Sell'} ${o.type === 'stop' ? 'Stop' : 'Limit'}
@@ -460,39 +462,11 @@ function renderOrders() {
       <button class="cancel-order" data-id="${esc(o.id)}">Cancel</button>
     </li>`
   ).join('');
-  const options = state.companies.map((c) =>
-    `<option value="${esc(c.id)}">${esc(c.name)}</option>`
-  ).join('');
-  el.innerHTML = `
-    <p>Market: <strong>${open}</strong></p>
-    <div class="card">
-      <h3>Holdings</h3>
-      <ul>${holdings || '<li class="empty">No holdings</li>'}</ul>
-    </div>
-    <div class="card">
-      <h3>My orders</h3>
-      <ul>${orders || '<li class="empty">No orders</li>'}</ul>
-    </div>
-    <div class="card">
-      <h3>New order</h3>
-      <div class="order-form">
-        <select id="order-company">${options}</select>
-        <select id="order-side">
-          <option value="buy">Buy</option>
-          <option value="sell">Sell</option>
-        </select>
-        <select id="order-type" class="full">
-          <option value="market">Market</option>
-          <option value="limit">Limit</option>
-          <option value="stop">Stop (sell only)</option>
-        </select>
-        <input id="order-qty" type="number" min="1" placeholder="Quantity" />
-        <input id="order-price" type="number" min="0" step="any" placeholder="Price (limit/stop only)" />
-        <button id="btn-place" class="full">Place order</button>
-      </div>
-    </div>
-  `;
-  el.querySelectorAll('.cancel-order').forEach((btn) => {
+  return orders || '<li class="empty">No orders</li>';
+}
+
+function bindCancelOrderButtons(scope) {
+  scope.querySelectorAll('.cancel-order').forEach((btn) => {
     btn.addEventListener('click', async () => {
       try {
         await api(`/orders/${btn.dataset.id}`, {
@@ -504,31 +478,86 @@ function renderOrders() {
       } catch (err) { toast(err.message); }
     });
   });
-  $('#btn-place').addEventListener('click', async () => {
-    try {
-      const companyId = $('#order-company').value;
-      const side = $('#order-side').value;
-      const type = $('#order-type').value;
-      const quantity = parseInt($('#order-qty').value, 10);
-      const priceRaw = $('#order-price').value;
-      if (!quantity || quantity <= 0) throw new Error('Enter a quantity');
+}
 
-      const body = { characterId: state.characterId, companyId, side, quantity };
-      if (type === 'limit') {
-        if (!priceRaw) throw new Error('Enter a limit price');
-        body.orderType = 'limit';
-        body.limitPrice = Number(priceRaw);
-      } else if (type === 'stop') {
-        if (side !== 'sell') throw new Error('Stop-loss is sell-only');
-        if (!priceRaw) throw new Error('Enter a trigger price');
-        body.orderType = 'stop';
-        body.limitPrice = Number(priceRaw);
-      }
-      await api('/trade', { method: 'POST', body });
-      toast('Order placed.');
-      await refreshSurvivalAndOrders();
-    } catch (err) { toast(err.message); }
-  });
+function renderOrders() {
+  const el = $('#tab-orders');
+  if (!el) return;
+  const open = state.world ? (state.world.market.open ? 'Open' : 'Closed') : '—';
+
+  // The "New order" form is static (company list never changes), so build it
+  // only once. Rebuilding it on every world_state tick used to wipe the
+  // quantity the player was typing.
+  if (!el.querySelector('.order-form')) {
+    if (!state.companies.length) {
+      el.innerHTML = '<p class="empty">Loading…</p>';
+      return;
+    }
+    const options = state.companies.map((c) =>
+      `<option value="${esc(c.id)}">${esc(c.name)}</option>`
+    ).join('');
+    el.innerHTML = `
+      <p>Market: <strong id="order-market">${open}</strong></p>
+      <div class="card">
+        <h3>Holdings</h3>
+        <ul id="order-holdings">${renderHoldings()}</ul>
+      </div>
+      <div class="card">
+        <h3>My orders</h3>
+        <ul id="order-my-orders">${renderOrderItems()}</ul>
+      </div>
+      <div class="card">
+        <h3>New order</h3>
+        <div class="order-form">
+          <select id="order-company">${options}</select>
+          <select id="order-side">
+            <option value="buy">Buy</option>
+            <option value="sell">Sell</option>
+          </select>
+          <select id="order-type" class="full">
+            <option value="market">Market</option>
+            <option value="limit">Limit</option>
+            <option value="stop">Stop (sell only)</option>
+          </select>
+          <input id="order-qty" type="number" min="1" placeholder="Quantity" />
+          <input id="order-price" type="number" min="0" step="any" placeholder="Price (limit/stop only)" />
+          <button id="btn-place" class="full">Place order</button>
+        </div>
+      </div>
+    `;
+    $('#btn-place').addEventListener('click', async () => {
+      try {
+        const companyId = $('#order-company').value;
+        const side = $('#order-side').value;
+        const type = $('#order-type').value;
+        const quantity = parseInt($('#order-qty').value, 10);
+        const priceRaw = $('#order-price').value;
+        if (!quantity || quantity <= 0) throw new Error('Enter a quantity');
+
+        const body = { characterId: state.characterId, companyId, side, quantity };
+        if (type === 'limit') {
+          if (!priceRaw) throw new Error('Enter a limit price');
+          body.orderType = 'limit';
+          body.limitPrice = Number(priceRaw);
+        } else if (type === 'stop') {
+          if (side !== 'sell') throw new Error('Stop-loss is sell-only');
+          if (!priceRaw) throw new Error('Enter a trigger price');
+          body.orderType = 'stop';
+          body.limitPrice = Number(priceRaw);
+        }
+        await api('/trade', { method: 'POST', body });
+        toast('Order placed.');
+        await refreshSurvivalAndOrders();
+      } catch (err) { toast(err.message); }
+    });
+  }
+
+  // Refresh only the dynamic sections so typed input in the form is preserved.
+  $('#order-market').textContent = open;
+  $('#order-holdings').innerHTML = renderHoldings();
+  const ordersEl = $('#order-my-orders');
+  ordersEl.innerHTML = renderOrderItems();
+  bindCancelOrderButtons(ordersEl);
 }
 
 function renderStatusBar() {
