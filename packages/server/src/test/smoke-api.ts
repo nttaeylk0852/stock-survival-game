@@ -7,11 +7,15 @@ const BASE = process.env.SMOKE_BASE ?? 'http://localhost:3000';
 async function call<T>(
   method: 'GET' | 'POST' | 'DELETE',
   path: string,
-  body?: unknown
+  body?: unknown,
+  token?: string
 ): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (body) headers['Content-Type'] = 'application/json';
+  if (token) headers['x-character-token'] = token;
   const res = await fetch(`${BASE}${path}`, {
     method,
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    headers: Object.keys(headers).length ? headers : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
   const json = (await res.json()) as { ok: boolean; data?: T; error?: string };
@@ -29,12 +33,13 @@ async function main(): Promise<void> {
   const user = await call<{ userId: string }>('POST', '/api/users', { username });
   console.log(`  user created: ${user.userId}`);
 
-  const created = await call<{ character: { id: string }; balance: number }>(
+  const created = await call<{ character: { id: string }; token: string; balance: number }>(
     'POST',
     '/api/characters',
     { userId: user.userId, name: 'SmokeRunner' }
   );
   const characterId = created.character.id;
+  const token = created.token;
   console.log(`  character created: ${characterId} (balance ${created.balance})`);
 
   const companies = await call<{ id: string; name: string; currentPrice: number }[]>(
@@ -47,7 +52,8 @@ async function main(): Promise<void> {
   const trade = await call<{ method: string; total: number; shares: number; balance: number }>(
     'POST',
     '/api/trade',
-    { characterId, companyId: company.id, side: 'buy', quantity: 5 }
+    { characterId, companyId: company.id, side: 'buy', quantity: 5 },
+    token
   );
   console.log(
     `  bought 5 via ${trade.method} for ${trade.total.toFixed(2)} -> shares ${trade.shares}, balance ${trade.balance.toFixed(2)}`
@@ -63,9 +69,12 @@ async function main(): Promise<void> {
     `  portfolio: ${portfolio.entries.length} holding(s), cash ${portfolio.balance.toFixed(2)} + stock ${portfolio.stockValue.toFixed(2)} = net worth ${portfolio.netWorth.toFixed(2)}`
   );
 
-  const meal = await call<{ cost: number; health: number }>('POST', '/api/survival/eat', {
-    characterId,
-  });
+  const meal = await call<{ cost: number; health: number }>(
+    'POST',
+    '/api/survival/eat',
+    { characterId },
+    token
+  );
   console.log(`  ate for ${meal.cost.toFixed(2)} -> health ${meal.health}`);
 
   const agendas = await call<unknown[]>('GET', '/api/agendas');
