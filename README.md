@@ -24,6 +24,8 @@ Server: `http://localhost:3000` | WebSocket: `ws://localhost:3000/ws`
 
 Docker image + Fly.io volume (`/data/game.db`) for 24/7 uptime. Steps: `docs/DEPLOY.md`.
 
+Live: https://stock-survival.fly.dev
+
 ## API
 
 All responses use the `ApiResponse` envelope: `{ ok, data?, error? }`.
