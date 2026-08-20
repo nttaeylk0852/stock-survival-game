@@ -65,7 +65,6 @@
 - `ammFeeRate` 공식 변경 금지. 0.3%로 바꾸려면 `config/market.json`만.
 - NPC 세력 부활, 선물/코인/실물시장 금지.
 - 시즌 wall-clock은 **묶음 14에서 고친다.** 그 전에는 건드리지 말 것.
-- `FORCE_CAPITAL` 잔재는 여전히 이 루프 밖. 고치지 말 것.
 - 20~23에서 **새 npm 의존성을 설치하지 말 것.** `git commit`/`git push`/`fly deploy`는 주인이 한다.
 
 ## 확정 규칙 (재해석 금지)
@@ -100,7 +99,7 @@ Expo 신규 금지. `packages/web/public` 정적 파일 + Express 서빙.
 **flag false로만 커밋.** 웹에 사람 여러 명 들어온 뒤에 켠다.
 
 ## 이 루프에 넣지 않는 구멍 (새 태스크, 13 이후)
-- `FORCE_CAPITAL` / forces 타입 잔재.
+- `FORCE_CAPITAL` / forces 타입 잔재 — **정리 완료** (2026-08-20, 별도 태스크).
 구멍 1–4(발동 시 손절 증발, 매수 스탑, 내 주문 API, `placeOrder` 직행 테스트)는 **7–9 안에** 있다. 따로 빼지 말 것.
 
 ## 현재 위치 (해석, 2026-08)

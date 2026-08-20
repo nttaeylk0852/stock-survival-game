@@ -36,8 +36,6 @@
 - `export interface CompaniesConfig {`
 - `export interface IntelConfig {`
 - `export interface SectorsConfig {`
-- `export interface ForceProfile {`
-- `export interface ForcesConfig {`
 - `export interface CentralBankConfig {`
 - `export interface CommodityConfig {`
 - `export type CommoditiesConfig = Record<string, CommodityConfig>;`
@@ -103,18 +101,6 @@
 - `export function computeTargetInterestRate(`
 - `export function applyInterestStep(`
 - `export class MacroModule implements GameModule {`
-
-### `packages/server/src/modules/forces/index.ts`
-- `export class ForcesModule implements GameModule {` — — 공매도는 sell(풀에 주식↑, 음수 포지션), 숏커버는 buy(풀에서 주식↓).
-
-### `packages/server/src/modules/forces/strategies.ts`
-- `export interface ForceSignal {`
-- `export interface ValueParams {`
-- `export interface MomentumParams {`
-- `export interface ShortParams {`
-- `export function valueStrategy(company: Company, fairPrice: number, params: ValueParams): ForceSignal {`
-- `export function momentumStrategy(priceHistory: number[], params: MomentumParams): ForceSignal {`
-- `export function shortStrategy(`
 
 ### `packages/server/src/modules/governance/index.ts`
 - `export class GovernanceModule implements GameModule {`

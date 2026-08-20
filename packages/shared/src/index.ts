@@ -74,8 +74,7 @@ export type LedgerReason =
   | 'BOND_BUY'
   | 'BOND_SELL'
   | 'JOB_INCOME'
-  | 'AMM_TRADE'
-  | 'FORCE_CAPITAL';
+  | 'AMM_TRADE';
 
 export interface LedgerEntry {
   id: string;
